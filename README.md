@@ -170,7 +170,9 @@ Open `diagnostics.json` first. It records the effective method, convergence and 
 
 ## Methods paper
 
-Read the [companion methods paper (PDF)](docs/paper/pyscf-esd.pdf) or the LaTeX sources for the [main article](docs/paper/main.tex), [electronic response](docs/paper/electronic.tex), and [nuclear methods](docs/paper/nuclear.tex). The paper gives the working equations for signed root tracking, projected TDA response, coherent vibronic intensities, and thermal rotor–spectator spectra. The eight selected figures document the benchmarks.
+The [complete article (PDF)](docs/paper/pyscf-esd.pdf) includes the abstract, introduction, methods, results and discussion, and conclusions. It presents nine molecular structures, a quantitative benchmark table, and the eight selected spectra within the results that discuss them. The [main LaTeX source](docs/paper/main.tex) includes the [electronic response](docs/paper/electronic.tex), [nuclear methods](docs/paper/nuclear.tex), and [benchmark table](docs/paper/benchmark-table.tex).
+
+[Download the PDF directly](https://raw.githubusercontent.com/HenriqueCSJ/PySCF_ESD/main/docs/paper/pyscf-esd.pdf).
 
 Build the article from its source with `latexmk -cd -pdf docs/paper/main.tex`.
 

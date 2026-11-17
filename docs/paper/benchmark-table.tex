@@ -1,0 +1,52 @@
+\begin{table}[htbp]
+  \centering
+  \caption{Vibronic benchmarks and numerical controls.}
+  \label{tab:benchmarks}
+  \small
+  \setlength{\tabcolsep}{4pt}
+  \begin{tabularx}{\linewidth}{@{}>{\raggedright\arraybackslash}p{0.179\linewidth}
+    >{\raggedright\arraybackslash}p{0.303\linewidth}rr
+    >{\raggedright\arraybackslash}X@{}}
+    \toprule
+    System & Observable & PySCF ESD & Comparator & Basis of comparison \\
+    \midrule
+    Benzene & Fluorescence peak-height ratio &
+      \num{1.013} $\to$ \num{0.754} & \num{0.688} & Measured in \emph{n}-hexane\cite{desouza} \\
+    Benzene & Absorption peak-height ratio &
+      \num{1.142} $\to$ \num{1.568} & \num{1.469} & Measured in \emph{n}-hexane\cite{desouza} \\
+    Benzene & Absorption profile RMSE &
+      \num{0.0628} & \num{0.0656} & Harmonic PBE \\
+    Benzene & Fluorescence profile RMSE &
+      \num{0.0812} & \num{0.1310} & Harmonic PBE \\
+    CF$_3$NO & Absorption maximum above 0--0 (\wn) &
+      \num{498.50} & \num{499.90} & 298 K measured peak, jet-cooled 0--0\cite{mason,dyet} \\
+    Pyridine & Native 0--0 energy (eV) &
+      \num{4.217} & \num{4.311} & Measured in vapor\cite{laane} \\
+    9-Cyanoanthracene & Fluorescence band-area ratio &
+      \num{0.69} $\to$ \num{1.37} & \num{1.21} & Measured in cyclohexane\cite{boens} \\
+    Quinine dication & Native peak Stokes gap (eV) &
+      \num{0.407} & \num{0.852} & Measured in aqueous acid\cite{photochemcad} \\
+    Naphthalene & Radiative rate ($10^6\,\mathrm{s}^{-1}$) &
+      \num{6.867} & \num{2.395} & Digitized cyclohexane measurement\cite{desouza} \\
+    LiH & $S_1$ bond curvature ($10^{-2}E_\mathrm{h}/a_0^2$) &
+      \num{2.089042} & \num{2.089037} & ORCA 6.1.1, gradient differences \\
+    Formaldehyde & Electronic inversion barrier (\wn) &
+      \num{133.90} & \num{279.00} & 2D model, planar direction fixed \\
+    Water & Max. CPU--GPU absorption line error (\wn) &
+      \num{1.13e-5} & \num{2.0} & Predefined all-line error limit \\
+    \bottomrule
+  \end{tabularx}
+
+  \smallskip
+  \parbox{\linewidth}{\footnotesize\raggedright
+    Benzene height ratios place the higher-energy peak in the numerator.
+    The arrows show replacement of the B3LYP5 displacement by the CASPT2-derived
+    displacement for benzene and use of AH+HT in place of AS--FC for native 9-cyanoanthracene spectra.
+    The 9-cyanoanthracene area ratio uses 415.97--443.96 nm over 384.85--415.97 nm.
+    Benzene RMSE is relative to the measured trace, using aligned, peak-normalized PBE profiles
+    with matched Voigt widths within each spectral direction.
+    The CF$_3$NO interval uses the PBE0/TDA rotor on the retained unstable-reference surfaces.
+    The naphthalene rate is conditional on the $^1$L$_b$-connected manifold and uses
+    $\omega$B97X active surfaces and dipoles with B3LYP5 geometry, metric, and VG spectators.
+    The 3D formaldehyde barrier uses the direct planar saddle point.}
+\end{table}

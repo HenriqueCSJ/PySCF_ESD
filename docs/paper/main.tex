@@ -1,43 +1,67 @@
-\documentclass[10pt]{article}
+\documentclass[11pt]{article}
+\ifdefined\pdfminorversion\pdfminorversion=7\fi
 \usepackage[T1]{fontenc}
 \usepackage{lmodern}
-\usepackage[letterpaper,margin=0.79in]{geometry}
+\usepackage[letterpaper,left=0.81in,right=0.81in,top=0.81in,bottom=0.76in]{geometry}
 \usepackage{amsmath,amssymb}
-\usepackage{graphicx,caption}
-\usepackage{microtype}
-\usepackage[hidelinks,pdftitle={State-tracked vibronic spectroscopy with PySCF ESD},pdfauthor={PySCF ESD project}]{hyperref}
+\usepackage{graphicx,caption,booktabs,tabularx,siunitx,array}
+\usepackage{microtype,placeins,fancyhdr}
+\usepackage[hidelinks,pdftitle={State-tracked vibronic spectroscopy with PySCF ESD},pdfauthor={PySCF ESD project},bookmarksopen]{hyperref}
 
-\graphicspath{{../benchmarks/}{docs/benchmarks/}}
+\graphicspath{{./}{docs/paper/}{../benchmarks/}{docs/benchmarks/}}
 \makeatletter
 \def\input@path{{./}{docs/paper/}}
 \makeatother
 \newcommand{\wn}{\ensuremath{\mathrm{cm}^{-1}}}
 \newcommand{\doi}[1]{\href{https://doi.org/#1}{DOI~\nolinkurl{#1}}}
-\setlength{\emergencystretch}{1.6em}
-\captionsetup{font=small,labelfont=bf,hypcap=false}
+\setlength{\emergencystretch}{1.7em}
+\setlength{\parskip}{0.22em}
+\setlength{\parindent}{0.85em}
+\setlength{\headheight}{14pt}
+\renewcommand{\topfraction}{0.92}
+\renewcommand{\bottomfraction}{0.85}
+\renewcommand{\textfraction}{0.08}
+\renewcommand{\floatpagefraction}{0.68}
+\setcounter{topnumber}{2}
+\setcounter{totalnumber}{3}
+\captionsetup{font=small,labelfont=bf}
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\itshape PySCF ESD}
+\fancyhead[R]{\small\itshape Vibronic absorption and fluorescence}
+\fancyfoot[C]{\thepage}
+\renewcommand{\headrulewidth}{0.25pt}
+\fancypagestyle{plain}{\fancyhf{}\fancyfoot[C]{\thepage}\renewcommand{\headrulewidth}{0pt}}
 \newcommand{\benchfigure}[3]{%
-  \par\noindent\begin{minipage}{\linewidth}
-  \centering\includegraphics[width=0.96\linewidth,height=0.385\textheight,keepaspectratio]{#1}%
-  \captionof{figure}{#3}\label{#2}
-  \end{minipage}\par\medskip}
+  \begin{figure}[!htbp]
+    \centering
+    \includegraphics[width=0.98\linewidth,height=0.54\textheight,keepaspectratio]{#1}
+    \caption{#3}
+    \label{#2}
+  \end{figure}}
 
-\title{State-tracked vibronic absorption and fluorescence with PySCF ESD}
+\title{\textbf{State-tracked vibronic absorption and fluorescence with PySCF ESD}}
 \author{PySCF ESD project}
 \date{}
 \begin{document}
 \maketitle
 
-\begin{abstract}
-PySCF ESD computes vibronic absorption, fluorescence, and radiative rates from state-tracked electronic calculations. The workflow combines root and phase tracking across geometries with convergence tests, automatic selection of nuclear models, and explicit population and dipole-strength coverage. A prepared density-fitted molecular Tamm--Dancoff route evaluates excited-state curvature and transition-dipole derivatives analytically with equilibrium continuum response. The nuclear solver combines independent harmonic surfaces, coherent Herzberg--Teller amplitudes, and a discrete variable representation of selected anharmonic coordinates. When a large-amplitude torsion is separable, a phase-consistent periodic rotor can be combined with thermally populated harmonic spectators through spectral convolution. Benzene illustrates how the equilibrium displacement and anharmonic curvature affect band intensities. Trifluoronitrosomethane separates the influence of a genuine internal rotor on band shape from instability in the electronic reference. Solution and gas-phase examples show that the vibronic origin, relative band intensities, peak separation, and radiative strength require distinct checks.
-\end{abstract}
+\pdfbookmark[1]{Abstract}{abstract}
+\section*{Abstract}
+The positions and intensities of vibronic bands depend on electronic-state identity, equilibrium displacement, nuclear curvature, and the variation of the transition dipole. We present PySCF ESD, a workflow for absorption and fluorescence that combines signed root tracking and stability checks with harmonic and reduced-dimensional anharmonic calculations. A prepared density-fitted Tamm--Dancoff route evaluates excited-state Hessians and transition-dipole derivatives analytically with equilibrium continuum response. A separable periodic rotor includes a signed torsion-dependent dipole and thermally populated harmonic spectators. In CF$_3$NO this treatment places the absorption maximum 498.50~\wn\ above the calculated 0--0 origin, compared with 499.90~\wn\ measured relative to the jet origin. The broad low-frequency structure is recovered after origin alignment on archived surfaces with a restricted-reference instability. In benzene, the anharmonic PBE model lowers the fluorescence-profile error by 38\% relative to harmonic PBE at the same adjusted width. Pyridine, 9-cyanoanthracene, and the quinine dication show how band ratios, absolute energies, and calibrated absorption constrain the interpretation of aligned spectra. Additional molecular controls examine analytic derivatives, nuclear inversion, CPU/GPU agreement, and radiative-rate sensitivity.
 
 \section{Introduction}
 
-Vibronic spectroscopy probes the displacement and curvature of electronic surfaces and the coordinate dependence of transition moments. Generating functions, Duschinsky rotation, and Herzberg--Teller coupling provide an established description at the harmonic level.\cite{desouza,santoro,baiardi} For automated molecular calculations the preceding electronic problem is equally important. The electronic state must remain identifiable on the displaced geometries, and the sign of the electronic transition moment must be transported consistently before derivatives or overlaps are evaluated. A local harmonic expansion also becomes unreliable when an internal rotor or an inversion crosses its barrier in the thermally occupied region.
+A vertical excitation energy is an electronic gap at a fixed nuclear geometry. A vibronic maximum also depends on nuclear reorganization, vibrational populations, and the changing electronic transition moment. Absorption and fluorescence populate different initial surfaces. Resolving their band energies, line strengths, and radiative rates requires a consistent description of both surfaces.
 
-PySCF ESD integrates these requirements with PySCF and its optional GPU backend.\cite{pyscf,gpu} Its implementation contributions are a state-qualified electronic workflow, a prepared analytic density-fitted excited-state response for a restricted class of molecular references, and coupling of phase-consistent reduced anharmonic models to harmonic spectators with explicit coverage checks. The calculations below probe each component and preserve native energy references alongside line-shape comparisons.
+Franck--Condon generating functions, Duschinsky rotation, and Herzberg--Teller coupling provide established tools in the harmonic regime.\cite{desouza,santoro,baiardi} Automated calculations must also generate the molecular inputs reliably. An electronic root may change character across a geometry step, independent solves can reverse the sign of a transition amplitude, and an apparently converged closed-shell determinant can be unstable toward orbital rotations. A single quadratic expansion can miss the motion of an internal rotor or an inversion that samples symmetry-equivalent wells. Hybrid anharmonic--harmonic models provide a route to such motion.\cite{hybriddvr}
 
-\section{Theory and implementation}
+PySCF ESD integrates these checks with PySCF and its optional graphics-processor backend.\cite{pyscf,gpu} The electronic workflow follows root identity and phase, checks convergence and orbital stability, and exposes a prepared analytic response route. The nuclear layer evaluates coherent optical amplitudes, measures vibrational-basis coverage, and couples an active large-amplitude coordinate to a harmonic bath when separability is justified. The benchmarks distinguish numerical implementation checks from comparisons with experimental spectra. Figure~\ref{fig:structures} shows the molecular systems.
+
+\benchfigure{benchmark-structures.pdf}{fig:structures}{Molecular systems in the benchmark. Panels (a)--(e) cover the systems compared with measured absorption or fluorescence profiles. Panels (f)--(i) show LiH for analytic derivative and spectral tests, formaldehyde for inversion, water for CPU/GPU agreement, and naphthalene for radiative-rate sensitivity. The quinine dication is protonated at both nitrogens.}
+
+\FloatBarrier
+\section{Methods}
 
 \input{electronic}
 \input{nuclear}
@@ -78,7 +102,35 @@ We use peak-normalized root-mean-square error on the stated comparison window $\
 \end{equation}
 A local intensity ratio isolates a progression. Its value depends on whether the observable is the height at each maximum or the area in fixed band windows. We retain that distinction below.
 
-\section{Benchmarks}
+
+\subsection{Benchmark protocols}
+
+The gas-phase automatic workflow uses PySCF 2.15. The prepared analytic molecular calculations use GPU4PySCF 1.9.2 where the required response kernels are available. Density fitting supplies the Coulomb and exchange contributions at the prepared analytic endpoints. The solvent and electronic structure level are specified for each benchmark. The LiH and formaldehyde controls use archived RHF--CIS calculations to test analytic derivatives and nuclear assembly. The spectroscopic comparisons use DFT input, with a separate benzene control that substitutes a displacement from published geometries. Radiative rates use the vacuum electric-dipole prefactor. The individual captions record the Gaussian or Lorentzian broadening and any rigid energy shift.
+
+Numerical controls evaluate isolated-state tracking, convergence of the response equations, and agreement between implementations of the subsequent spectral calculation. Molecular comparisons address native origins, relative band intensities, calibrated absorption, and peak separation where measurements are available. These are separate observables with different sensitivity to the electronic and nuclear model.
+
+\section{Results and discussion}
+
+\subsection{Quantitative benchmarks}
+
+Table~\ref{tab:benchmarks} compares representative observables from the molecular tests. The reference in each row is identified as a measurement or a numerical control. An aligned shape probes band positions and relative intensities within its comparison window. The native energy axis and calibrated quantities probe absolute prediction.
+
+\input{benchmark-table}
+\FloatBarrier
+
+\subsection{Analytic AH and multidimensional inversion}
+
+We use archived RHF--CIS/6-31G data for a one-mode implementation check of analytic excited-state derivatives and AH assembly. At the retained $S_1$ minimum the analytic bond curvature is $0.020890425\,E_h a_0^{-2}$. An independent gradient difference at the same level and geometry with displacement $\pm0.002\,a_0$ gives $0.020890370\,E_h a_0^{-2}$.\footnote{The gradient difference is a numerical reference for the derivative test. The AH spectra use analytic derivatives.} The two harmonic frequencies, 1\,400.93 and 791.95~\wn, and their zero-point correction give a common 0--0 origin of 31\,354.50~\wn. At 0 K the strongest absorption line lies at 32\,146.45~\wn\ and fluorescence peaks at the origin (Fig.~\ref{fig:lih}). Their separation equals one excited-state harmonic quantum. The photon-energy weights and one-mode overlaps account for the different progressions.
+
+\benchfigure{lih.png}{fig:lih}{Independent analytic AH control for LiH at 0 K, RHF--CIS/6-31G. Absorption and emission are independently peak-normalized and use Gaussian $\sigma=50$~\wn\ (0.0062~eV). The dashed line shows the common 0--0 origin.}
+
+For formaldehyde, extending the two-coordinate inversion model into the relaxed planar direction changes the electronic barrier evaluated at the direct saddle from 279.00 to 133.90~\wn. The lowest even--odd spacing changes from 224.65 to 211.84~\wn. Classifying the pair requires comparing the vibrational energies to a barrier that includes transverse zero-point motion. The even level lies slightly above the maximum of the corresponding transverse adiabatic potential. These numbers are from the archived RHF--CIS model.
+
+
+\FloatBarrier
+\subsection{Matched CPU and GPU water benchmark}
+
+The matched water calculation uses PBE0/6-31+G* and the TDA vertical-gradient model at 298.15 K. Both backends build Coulomb and exchange directly and hold the quadrature grid fixed in the ground-state Hessian. Each yields 9,100 lines in each direction. The maximum line-position differences were $1.13\times10^{-5}$~\wn\ for absorption and $1.04\times10^{-5}$~\wn\ for emission, and the origins differed by $8.73\times10^{-6}$~\wn. The maximum differences in the excited-state gradient and ground-state Hessian were $3.64\times10^{-11}\,E_h a_0^{-1}$ and $7.04\times10^{-11}\,E_h a_0^{-2}$, respectively. All 16 prespecified numerical checks passed. The median elapsed times over three warm end-to-end runs were 21.37 s on the two-thread CPU run and 36.80 s on the RTX 4070 Laptop GPU. The timing describes a small-molecule workload on that configuration.
 
 \subsection{Benzene in \emph{n}-hexane}
 
@@ -86,8 +138,14 @@ The transition to the $^{1}B_{2u}$ state is electric-dipole forbidden at the $D_
 
 Figure~\ref{fig:benzene-geometry} compares a 30-mode B3LYP5/TDA AH+HT calculation with a geometry-only control. The B3LYP5 C--C expansion is 0.030706~\AA. The control substitutes a 0.036~\AA\ expansion derived from published CASPT2 geometries.\cite{bernhardsson} In the totally symmetric $A_{1g}$ block, this changes the projection of the minimum-to-minimum displacement onto the normal coordinates, which changes the displaced-oscillator overlaps. Both models share the B3LYP5 Hessians, the same linear continuum-response transition moment, the native origin used in the Hamiltonian assembly, the Lorentzian width, and the common comparison shift. The high-to-low fluorescence peak ratio changes from 1.013 to 0.754, versus 0.688 measured. In the cited absorption windows the second-to-first height ratio changes from 1.142 to 1.568, versus 1.469 measured. The corrected area ratios are 0.685 and 1.578, compared with 0.677 and 1.496 measured. This isolates a sensitivity to displacement and uses external geometry information for the control.
 
+\benchfigure{benzene-geometry-control.png}{fig:benzene-geometry}{Benzene at 298 K. The published geometry supplies the $A_{1g}$ displacement in the controlled B3LYP5/TDA comparison. The PySCF curves share Hessians and dipoles, a Lorentzian FWHM of 50~\wn\ (0.0062~eV), and a common $-0.465$~eV shift.\cite{bernhardsson,desouza}}
+
+
 Figure~\ref{fig:benzene-pbe} gives a separate harmonic/anharmonic comparison at PBE/def2-TZVP($-f$)/TDA.\cite{pbe,weigendbasis} We treat the soft $E_{2u}$ pair with a radial potential and include a quartic continuation for the $B_{2g}$ coordinate. At the original common linewidth, the fluorescence RMSE decreases from 0.160 to 0.100. Narrowing the Gaussian component of the Voigt profile at fixed shifts yields absorption and fluorescence RMSE values of 0.063 and 0.081 for anharmonic PBE, versus 0.066 and 0.131 for harmonic PBE with the same adjusted widths. The figure includes the published AH trace,\cite{desouza} with RMSE values of 0.085 and 0.071 under its published broadening. A separate mixed PBE/B3LYP5 diagnostic with limiting front-face collection gives fluorescence RMSE 0.074 and area-normalized total variation 0.072, compared with 0.080 for the published trace. The mixed calculation uses PBE displacement and $S_0$ curvature with B3LYP5 $S_1$ curvature and optical response. Comparison windows are approximately 4.58--5.58~eV for absorption and 3.72--4.72~eV for fluorescence.
 
+\benchfigure{benzene.png}{fig:benzene-pbe}{Benzene PBE comparison at 298 K. The adjusted Voigt profile for both PBE models uses Lorentzian FWHM 0.019~eV and Gaussian $\sigma$ of 0.008~eV for absorption and 0.014~eV for fluorescence. The harmonic, anharmonic, and mixed curves use shifts of $-0.239$, $-0.241$, and $-0.329$~eV, respectively. The mixed and published curves retain their prior widths.\cite{desouza}}
+
+\FloatBarrier
 \subsection{Trifluoronitrosomethane}
 
 The published ORCA benchmark identified two limits of a local harmonic treatment of CF$_3$NO.\cite{hage} A linear Duschinsky map between the independently optimized minima was unreliable because of the large geometry change. In the adiabatic-Hessian-after-a-step (AHAS) spectrum the 0--0 band remained dominant, and the next strong progression arose from the N--O stretch near 1700~\wn\ above it. Experiment placed the absorption maximum about 500~\wn\ above the origin, in the low-frequency structure that includes the hindered rotation. The periodic rotor addresses this failure by treating the CF$_3$ rotation explicitly over the full angular path and by integrating the signed transition dipole over rotor eigenfunctions. It transfers intensity from the origin into the low-energy progression and recovers the broad experimental absorption envelope after origin alignment (Fig.~\ref{fig:cf3no-thermal}).
@@ -96,56 +154,62 @@ The weak visible $n\pi^*$ transition of CF$_3$NO involves 12 vibrational degrees
 
 Figure~\ref{fig:cf3no-zero} displays oscillator-strength and photon-rate densities at 0 K. The model uses different torsional potentials on the two surfaces and a signed vector transition moment along the rotation. Its broadened maxima lie near 13\,653 and 12\,751~\wn, with a peak Stokes separation of 902~\wn\ (0.112~eV). The separation between the corresponding absorption and emission centroids is 0.511~eV. These summary quantities differ because the asymmetric band wings carry spectral weight far from the peaks.
 
+\benchfigure{cf3no-0k.png}{fig:cf3no-zero}{Gas-phase CF$_3$NO on the native axis at 0 K, PBE0/def2-TZVPD/TDA with a periodic rotor and 11 harmonic spectators. The Gaussian $\sigma$ is 50~\wn\ (0.0062~eV). The restricted-reference instability limits the interpretation to the nuclear model on the retained surfaces.}
+
+
 At 298 K the two initial thermal ensembles generate different directional spectra (Fig.~\ref{fig:cf3no-thermal}). The native PBE0 origin and absorption maximum are 13\,170.36 and 13\,668.86~\wn. The jet-cooled origin is 13\,929.70~\wn, and the room-temperature absorption maximum from the measured trace is 14\,429.60~\wn.\cite{dyet,mason,hage} The peak-to-origin intervals are 498.50 and 499.90~\wn, despite an absolute absorption offset of $-760.74$~\wn. After the specified origin alignment, the absorption peak-normalized RMS deviations across the 66 measured ordinates are 0.173 (PBE0/TDA) and 0.208 (optional SF-TDA). The calculated vacuum radiative rates are $2.37\times10^4$ and $1.19\times10^4$~s$^{-1}$. The SF-TDA calculation uses auxiliary UKS spectator curvatures. The PBE0 endpoints fail the restricted-to-unrestricted stability test, so the archived PBE0 profiles qualify the reduced nuclear calculation on those surfaces. The experimental comparison at this temperature is for absorption.
 
-\subsection{Pyridine and 9-cyanoanthracene}
+\benchfigure{cf3no-298k.png}{fig:cf3no-thermal}{CF$_3$NO at 298 K. The PBE0/TDA and SF-TDA curves use Gaussian FWHM 80~\wn\ (0.0099~eV). Each method uses one shift in both directions, $+759.34$~\wn\ for PBE0/TDA and $+1469.13$~\wn\ for SF-TDA. The published CAM-B3LYP AHAS absorption trace is shifted by $+971.32$~\wn\ and shown with an additional 80~\wn\ Gaussian convolution. Calculated fluorescence retains absolute photon-rate density.\cite{mason,dyet,hage}}
+
+\FloatBarrier
+\subsection{Pyridine in vapor}
 
 For gas-phase pyridine, prepared density-fitted PBE0/def2-TZVPD/TDA endpoints use independent analytic Hessians, Duschinsky rotation, and signed dipole derivatives from the vacuum limit of the molecular continuum implementation. The tracked $n\pi^*$ state has a shallow nonplanar local minimum. The harmonic origin is 4.217~eV, 2.17\% below the vapor origin of 4.311~eV.\cite{laane} The harmonic soft-mode zero-point contribution is 37.11~\wn, larger than the 0.21~\wn\ electronic barrier between symmetry-equivalent minima. The local expansion resolves the curvature at a single minimum. The 298 K absorption calculation gives an integrated oscillator strength of 0.00735, compared with approximately 0.003 for the first measured electronic band.\cite{bolovinos} Figure~\ref{fig:pyridine} displays both native and independently aligned curves, with fluorescence from the lowest excited-state vibrational level.\cite{yamazaki,wang}
 
+\benchfigure{pyridine.png}{fig:pyridine}{Pyridine in vapor. The calibrated absorption and normalized fluorescence profiles use Gaussian FWHM values of 0.010 and 0.020~eV and display shifts of $-0.127$ and $+0.356$~eV, respectively. Lines on the native axis use the same widths.\cite{bolovinos,yamazaki,wang}}
+
+\FloatBarrier
+\subsection{9-Cyanoanthracene in cyclohexane}
 The 9-cyanoanthracene comparison uses an adiabatic-shift Franck--Condon (AS--FC) model from density-fitted PBE0/def2-SVPD/TDA in equilibrium cyclohexane C-PCM at 293.15 K. The equal curvature isolates the effects of displacement and the constant transition moment. In the selected wavelength-domain comparison (Fig.~\ref{fig:cyano}), increasing the Gaussian FWHM from 80 to 400~\wn\ decreases the unshifted profile RMSE from 0.417 to 0.273 for absorption and from 0.316 to 0.184 for fluorescence. The common 203~\wn\ shift uses the lowest-energy resolved absorption maximum of the Boens trace as the origin proxy.\cite{boens} The relative strength of the red absorption band remains too high.
 
 An analytic AH+HT control uses independent curvatures and dipole derivatives at the same stationary endpoints. At 80~\wn\ FWHM on the native axis, the ratio of the two leading fluorescence band areas increases from 0.69 to 1.37, compared with 1.21 measured. In that control the origin decreases from 24\,806.34 to 24\,228.42~\wn, and the absolute peak locations move farther from experiment. The band areas map onto wavelength windows 384.85--415.97 and 415.97--443.96~nm. The comparison separates the effects of curvature and optical response on intensity from their effects on the absolute energy scale.
 
+\benchfigure{cyanoanthracene-widths.png}{fig:cyano}{9-Cyanoanthracene in cyclohexane. Peak-normalized profiles with Gaussian FWHM 80, 147, and 400~\wn\ (0.0099, 0.0182, and 0.0496~eV). The right column applies the common $+203$~\wn\ (0.0252~eV) display shift. Fluorescence is represented per unit wavelength.\cite{boens}}
+
+\FloatBarrier
 \subsection{Quinine dication in aqueous acid}
 
 One diprotonated conformer was initiated from a quinine dihydrochloride hemihydrate crystal structure.\cite{quininecrystal} Density-fitted PBE0/def2-SVP/TDA in water C-PCM gives the electronic endpoints for AS--FC at 298.15 K. The analytic $S_0$ Hessian is used for both surfaces. The absorption dipole uses optical response at $S_0$, while fluorescence uses equilibrium linear response at the relaxed excited-state endpoint. The 23rd accepted excited-state step had a largest Cartesian force component of $6.22\times10^{-5}$~$E_h\,a_0^{-1}$. Strict geometry convergence remained incomplete. Using the preceding accepted step changes either integrated profile by less than 0.04\% in relative $L^1$ difference.
 
 The measured acid-solution peaks are 3.568 and 2.716~eV on the energy-domain representation (Fig.~\ref{fig:quinine}).\cite{photochemcad} The native absorption maximum at 3.606~eV is close to the measured value on the calibrated absorption scale. The native fluorescence maximum at 3.199~eV gives a Stokes separation of 0.407~eV, below the measured 0.852~eV. Shifting fluorescence by $-0.496$~eV gives a peak-normalized envelope RMSE of 0.0095. The absorption shift lowers the whole-window error and moves its peak to 3.687~eV. The model describes one conformer with continuum solvation. The alignment diagnoses the shape separately from the native energy separation.
 
-\subsection{Analytic AH control with lithium hydride}
+\benchfigure{quinine.png}{fig:quinine}{Quinine dication in water compared with PhotochemCAD spectra in 0.5~M aqueous sulfuric acid. The absorption and fluorescence Gaussian FWHM values are 0.496 and 0.397~eV. The respective display shifts are $+0.081$ and $-0.496$~eV.\cite{photochemcad}}
 
-We use archived RHF--CIS/6-31G data for a one-mode implementation check of analytic excited-state derivatives and AH assembly. The two harmonic frequencies, 1\,400.93 and 791.95~\wn, and their zero-point correction give a common 0--0 origin of 31\,354.50~\wn. At 0 K the strongest absorption line lies at 32\,146.45~\wn\ and fluorescence peaks at the origin (Fig.~\ref{fig:lih}). Their separation equals one excited-state harmonic quantum. The individual photon-energy weights and one-mode overlaps account for the different absorption and emission progressions.
 
-The prepared three-coordinate formaldehyde inversion example provides a second numerical control. Adding the relaxed planar direction to the two-coordinate model changes the electronic barrier from 279.00 to 133.90~\wn. The lowest even--odd spacing changes from 224.65 to 211.84~\wn. Classifying the pair requires comparing the vibrational energies to a barrier that includes transverse zero-point motion. The even level lies slightly above the maximum of the corresponding transverse adiabatic potential. These numbers are from the archived RHF--CIS model.
+\FloatBarrier
+\subsection{Radiative-rate sensitivity in naphthalene}
+
+A 298 K calculation in cyclohexane tests the sensitivity of the fluorescence rate to mixing between the low-lying $^1L_b$ and $^1L_a$ states. The B3LYP5 models share 47 gas-phase harmonic spectators. The one-promoter linear model gives a radiative rate of $2.01\times10^8$~s$^{-1}$. Including the nonlinear lower adiabatic response reduces it to $4.25\times10^7$~s$^{-1}$. Explicit coupling in the two-state nuclear model gives $2.27\times10^7$~s$^{-1}$ for the $^1L_b$-connected manifold. Replacing the active energies and dipoles with $\omega$B97X results at the retained geometries gives $6.87\times10^6$~s$^{-1}$. This comparison changes the center gap from 28.09 to 208.38 meV and reduces borrowed transverse dipole strength. The last rate remains 2.87 times the measured value of approximately $2.40\times10^6$~s$^{-1}$ in cyclohexane.\cite{desouza} The computed rates are conditional on the emitting manifold and the retained spectator model.
+
+\subsection{Interpretation across benchmarks}
+
+The numerical and spectroscopic comparisons probe distinct approximations. The LiH and water controls exercise the derivative and spectral implementations. Formaldehyde shows how opening another coordinate changes a reduced inversion barrier. The periodic CF$_3$NO model restores low-frequency intensity on the retained electronic surfaces. The tests on benzene separate the effects of equilibrium displacement from those of anharmonic curvature.
+
+A change in linewidth affects overlapping peak heights without changing the strengths of the input sticks. In 9-cyanoanthracene, changing the curvature and optical model modifies the relative fluorescence band areas. For quinine, the aligned fluorescence gives close agreement in shape while the native peak separation remains too small. The workflow reports integrated rates and strengths separately from shifts and broadened peak metrics.
 
 \section{Conclusions}
 
-The results show how electronic qualification, molecular deformation, and the nuclear basis constrain vibronic predictions. Analytic curvature and optical response are available within the supported prepared molecular route. State and phase tracking and explicit closure checks connect that route to the harmonic and anharmonic solvers. Benzene separates geometric displacement from anharmonic curvature. The CF$_3$NO periodic model distinguishes the spectral effect of the torsion from uncertainty in its electronic surfaces. The solution benchmarks show that matching a broadened envelope can coexist with a sizeable error in the absolute Stokes separation. The resulting workflow reports the quantities needed to distinguish these effects.
+PySCF ESD connects state-tracked electronic calculations to vibronic absorption, fluorescence, and radiative rates. Analytic excited-state curvature and optical derivatives are available for the supported prepared density-fitted TDA references. Signed transition moments, vibrational closure checks, and explicit characterization of the nuclear model allow the origin, strength, and shape of a band to be assessed independently.
 
+The periodic CF$_3$NO calculation recovers the missing low-frequency absorption structure after alignment to the jet origin. The instability of the PBE0 reference limits interpretation to a nuclear-model benchmark on the retained surfaces. The benzene controls distinguish geometric displacement from anharmonic curvature. The pyridine and solution comparisons quantify remaining errors in absolute energies, relative intensities, and Stokes separation.
+
+\pdfbookmark[1]{Code and data availability}{availability}
 \section*{Code and data availability}
 
-The \href{https://github.com/HenriqueCSJ/PySCF_ESD}{PySCF ESD repository} includes source, validation tests, example drivers, and the selected comparison figures. The Python package is GPL-3.0-only. Repeating the archived comparisons requires the electronic checkpoints and numerical spectral inputs from the individual calculations. Experimental data sources and the published geometry input are cited with the corresponding benchmarks.
+The \href{https://github.com/HenriqueCSJ/PySCF_ESD}{PySCF ESD repository} contains the package, tests, example drivers, manuscript source, and plotted comparisons. The Python package is licensed under GPL-3.0-only. The examples use retained electronic inputs and the measured data cited with each figure. Repeating the archived calculations requires the corresponding numerical checkpoints and spectral inputs. The historical plots retain their original units and comparison parameters, which are stated in the captions.
 
 \clearpage
-\section{Selected spectra}
-
-\benchfigure{benzene-geometry-control.png}{fig:benzene-geometry}{Benzene at 298 K. The published geometry supplies the $A_{1g}$ displacement in the controlled B3LYP5/TDA comparison. The PySCF curves share Hessians and dipoles, a Lorentzian FWHM of 50~\wn\ (0.0062~eV), and a common $-0.465$~eV shift.\cite{bernhardsson,desouza}}
-\benchfigure{benzene.png}{fig:benzene-pbe}{Benzene PBE comparison at 298 K. The adjusted Voigt profile for both PBE models uses Lorentzian FWHM 0.019~eV and Gaussian $\sigma$ of 0.008~eV for absorption and 0.014~eV for fluorescence. The harmonic, anharmonic, and mixed curves use shifts of $-0.239$, $-0.241$, and $-0.329$~eV, respectively. The mixed and published curves retain their prior widths.\cite{desouza}}
-
-\clearpage
-\benchfigure{cf3no-0k.png}{fig:cf3no-zero}{Gas-phase CF$_3$NO on the native axis at 0 K, PBE0/def2-TZVPD/TDA with a periodic rotor and 11 harmonic spectators. The Gaussian $\sigma$ is 50~\wn\ (0.0062~eV). The restricted-reference instability limits the interpretation to the nuclear model on the retained surfaces.}
-\benchfigure{cf3no-298k.png}{fig:cf3no-thermal}{CF$_3$NO at 298 K. The PBE0/TDA and SF-TDA curves use Gaussian FWHM 80~\wn\ (0.0099~eV). Each method uses one shift in both directions, $+759.34$~\wn\ for PBE0/TDA and $+1469.13$~\wn\ for SF-TDA. The published CAM-B3LYP AHAS absorption trace is shifted by $+971.32$~\wn\ and shown with an additional 80~\wn\ Gaussian convolution. Calculated fluorescence retains absolute photon-rate density.\cite{mason,dyet,hage}}
-
-\clearpage
-\benchfigure{pyridine.png}{fig:pyridine}{Pyridine in vapor. The calibrated absorption and normalized fluorescence profiles use Gaussian FWHM values of 0.010 and 0.020~eV and display shifts of $-0.127$ and $+0.356$~eV, respectively. Lines on the native axis use the same widths.\cite{bolovinos,yamazaki,wang}}
-\benchfigure{cyanoanthracene-widths.png}{fig:cyano}{9-Cyanoanthracene in cyclohexane. Peak-normalized profiles with Gaussian FWHM 80, 147, and 400~\wn\ (0.0099, 0.0182, and 0.0496~eV). The right column applies the common $+203$~\wn\ (0.0252~eV) display shift. Fluorescence is represented per unit wavelength.\cite{boens}}
-
-\clearpage
-\benchfigure{quinine.png}{fig:quinine}{Quinine dication in water compared with PhotochemCAD spectra in 0.5~M aqueous sulfuric acid. The absorption and fluorescence Gaussian FWHM values are 0.496 and 0.397~eV. The respective display shifts are $+0.081$ and $-0.496$~eV.\cite{photochemcad}}
-\benchfigure{lih.png}{fig:lih}{Independent analytic AH control for LiH at 0 K, RHF--CIS/6-31G. Absorption and emission are independently peak-normalized and use Gaussian $\sigma=50$~\wn\ (0.0062~eV). The dashed line shows the common 0--0 origin.}
-
-
-\clearpage
+\pdfbookmark[1]{References}{references}
 \begingroup
 \small
 \begin{thebibliography}{99}
@@ -153,6 +217,7 @@ The \href{https://github.com/HenriqueCSJ/PySCF_ESD}{PySCF ESD repository} includ
 \bibitem{desouza} B. de Souza, F. Neese, and R. Izs\'ak, J. Chem. Phys. \textbf{148}, 034104 (2018). \doi{10.1063/1.5010895}.
 \bibitem{santoro} F. Santoro, R. Improta, A. Lami, J. Bloino, and V. Barone, J. Chem. Phys. \textbf{126}, 084509 (2007). \doi{10.1063/1.2437197}.
 \bibitem{baiardi} A. Baiardi, J. Bloino, and V. Barone, J. Chem. Theory Comput. \textbf{9}, 4097--4115 (2013). \doi{10.1021/ct400450k}.
+\bibitem{hybriddvr} A. Baiardi, J. Bloino, and V. Barone, J. Chem. Theory Comput. \textbf{13}, 2804--2822 (2017). \doi{10.1021/acs.jctc.7b00236}.
 \bibitem{pyscf} Q. Sun \emph{et al.}, J. Chem. Phys. \textbf{153}, 024109 (2020). \doi{10.1063/5.0006074}.
 \bibitem{gpu} R. Li, Q. Sun, X. Zhang, and G. K.-L. Chan, J. Phys. Chem. A \textbf{129}, 1459--1468 (2025). \doi{10.1021/acs.jpca.4c05876}.
 \bibitem{tda} S. Hirata and M. Head-Gordon, Chem. Phys. Lett. \textbf{314}, 291--299 (1999). \doi{10.1016/S0009-2614(99)01149-5}.
@@ -163,22 +228,21 @@ The \href{https://github.com/HenriqueCSJ/PySCF_ESD}{PySCF ESD repository} includ
 \bibitem{liangtda} J. Liu and W. Liang, J. Chem. Phys. \textbf{135}, 014113 (2011). \doi{10.1063/1.3605504}.
 \bibitem{liangpcm} J. Liu and W. Liang, J. Chem. Phys. \textbf{138}, 024101 (2013). \doi{10.1063/1.4773397}.
 \bibitem{dvr} J. C. Light, I. P. Hamilton, and J. V. Lill, J. Chem. Phys. \textbf{82}, 1400--1409 (1985). \doi{10.1063/1.448462}.
-\bibitem{hybriddvr} A. Baiardi, J. Bloino, and V. Barone, J. Chem. Theory Comput. \textbf{13}, 2804--2822 (2017). \doi{10.1021/acs.jctc.7b00236}.
 \bibitem{longuethiggins} H. C. Longuet-Higgins, Proc. R. Soc. Lond. A \textbf{344}, 147--156 (1975). \doi{10.1098/rspa.1975.0095}.
 \bibitem{huhberger} J. Huh and R. Berger, Sci. Rep. \textbf{7}, 17561 (2017). \doi{10.1038/s41598-017-17506-8}.
+\bibitem{mason} J. Mason and J. Banus, J. Chem. Soc., 3904 (1957). \doi{10.1039/JR9570003904}.
+\bibitem{dyet} J. A. Dyet, M. R. S. McCoustra, and J. Pfab, J. Chem. Soc., Faraday Trans. 2 \textbf{84}, 463--482 (1988). \doi{10.1039/F29888400463}.
+\bibitem{laane} P. Boopalachandran and J. Laane, Chem. Phys. Lett. \textbf{462}, 178--182 (2008). \doi{10.1016/j.cplett.2008.07.080}.
+\bibitem{boens} N. Boens \emph{et al.}, Anal. Chem. \textbf{79}, 2137--2149 (2007). \doi{10.1021/ac062160k}. \href{https://doi.org/10.1021/ac062160k.s001}{Supporting Information} (CC BY-NC 4.0).
+\bibitem{photochemcad} R.-C. A. Fuh, quinine sulfate absorption and fluorescence, \href{https://omlc.org/spectra/PhotochemCAD/html/081.html}{PhotochemCAD entry 081}. Database described by J. M. Dixon, M. Taniguchi, and J. S. Lindsey, Photochem. Photobiol. \textbf{81}, 212--213 (2005).
 \bibitem{bernhardsson} A. Bernhardsson, N. Forsberg, P.-{\AA}. Malmqvist, B. O. Roos, and L. Serrano-Andr\'es, J. Chem. Phys. \textbf{112}, 2798--2809 (2000). \doi{10.1063/1.480854}.
 \bibitem{pbe} J. P. Perdew, K. Burke, and M. Ernzerhof, Phys. Rev. Lett. \textbf{77}, 3865--3868 (1996). \doi{10.1103/PhysRevLett.77.3865}.
 \bibitem{weigendbasis} F. Weigend and R. Ahlrichs, Phys. Chem. Chem. Phys. \textbf{7}, 3297--3305 (2005). \doi{10.1039/B508541A}.
 \bibitem{hage} G. da S. Hage, P. H. R. de Oliveira, G. B. Ferreira, and H. C. Silva Junior, ACS Omega \textbf{11}, 64274--64282 (2026). \doi{10.1021/acsomega.6c11480}.
-\bibitem{dyet} J. A. Dyet, M. R. S. McCoustra, and J. Pfab, J. Chem. Soc., Faraday Trans. 2 \textbf{84}, 463--482 (1988). \doi{10.1039/F29888400463}.
-\bibitem{mason} J. Mason and J. Banus, J. Chem. Soc., 3904 (1957). \doi{10.1039/JR9570003904}.
-\bibitem{laane} P. Boopalachandran and J. Laane, Chem. Phys. Lett. \textbf{462}, 178--182 (2008). \doi{10.1016/j.cplett.2008.07.080}.
 \bibitem{bolovinos} A. Bolovinos, P. Tsekeris, J. Philis, E. Pantos, and G. Andritsopoulos, J. Mol. Spectrosc. \textbf{103}, 240--256 (1984). \doi{10.1016/0022-2852(84)90051-1}.
 \bibitem{yamazaki} I. Yamazaki and H. Baba, J. Chem. Phys. \textbf{66}, 5826--5827 (1977). \doi{10.1063/1.433862}.
 \bibitem{wang} Y. Wang, J. Ren, W. Li, and Z. Shuai, J. Phys. Chem. Lett. \textbf{13}, 6391--6399 (2022). \doi{10.1021/acs.jpclett.2c01475}.
-\bibitem{boens} N. Boens \emph{et al.}, Anal. Chem. \textbf{79}, 2137--2149 (2007). \doi{10.1021/ac062160k}. \href{https://doi.org/10.1021/ac062160k.s001}{Supporting Information} (CC BY-NC 4.0).
 \bibitem{quininecrystal} G. I. Anderson, S. Bellia, M. Zeller, P. C. Hillesheim, and A. Mirjafari, IUCrData \textbf{6}, x210406 (2021). \doi{10.1107/S2414314621004065}.
-\bibitem{photochemcad} R.-C. A. Fuh, quinine sulfate absorption and fluorescence, \href{https://omlc.org/spectra/PhotochemCAD/html/081.html}{PhotochemCAD entry 081}. Database described by J. M. Dixon, M. Taniguchi, and J. S. Lindsey, Photochem. Photobiol. \textbf{81}, 212--213 (2005).
 
 \end{thebibliography}
 \endgroup
