@@ -2,6 +2,8 @@
 
 Install the package with the `.[workflow]` extra as shown in the [quick start](../README.md#quick-start). The same installation provides the CLI and the Python entry points below.
 
+In a PySCF script, use `from pyscf import esd`. The [`esd.run(mol, ...)` example](../README.md#use-as-a-pyscf-module) starts from an existing `pyscf.gto.Mole`. Core APIs such as `esd.run_prepared_ah` and `esd.solve_dvr` are also available through the module.
+
 | What you want to run | Entry point |
 | --- | --- |
 | Automatic CPU workflow with anharmonic screening | [`--model auto`](#from-a-single-xyz) |

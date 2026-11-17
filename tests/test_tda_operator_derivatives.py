@@ -3,7 +3,7 @@ import unittest
 from importlib.util import find_spec
 
 
-@unittest.skipUnless(find_spec("pyscf"), "PySCF is required")
+@unittest.skipUnless(find_spec("pyscf") and find_spec("pyscf.gto"), "PySCF is required")
 class CPCMOperatorDerivativeTests(unittest.TestCase):
     def test_cpcm_action_matches_same_geometry_native_response(self):
         from pyscf import gto

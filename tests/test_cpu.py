@@ -34,7 +34,7 @@ from pyscf_esd.cpu import (
 
 
 class CpuBackendTests(unittest.TestCase):
-    @unittest.skipUnless(find_spec("pyscf"), "PySCF is required to inspect basis definitions")
+    @unittest.skipUnless(find_spec("pyscf") and find_spec("pyscf.gto"), "PySCF is required to inspect basis definitions")
     def test_def2_valence_basis_is_not_run_as_all_electron(self):
         with self.assertRaisesRegex(ElectronicConvergenceError, "effective core potential for Rb"):
             build_molecule(("Rb", "H"), ((0, 0, 0), (0, 0, 4)), Settings("def2-tzvpd", "pbe0"))
@@ -140,7 +140,7 @@ class CpuBackendTests(unittest.TestCase):
         self.assertEqual(attempts[-1].route, "stability_rotation_diis")
         self.assertEqual(repaired.stability.call_count, 2)
 
-    @unittest.skipUnless(find_spec("pyscf"), "PySCF is required for molecular stability checks")
+    @unittest.skipUnless(find_spec("pyscf") and find_spec("pyscf.gto"), "PySCF is required for molecular stability checks")
     def test_restricted_spin_instability_is_distinguished_from_scf_convergence(self):
         settings = Settings("sto-3g", "pbe0", nstates=1, grid_level=1, stability_checks="all")
         symbols = ("H", "H")
@@ -157,7 +157,7 @@ class CpuBackendTests(unittest.TestCase):
             _solve_reference(stretched, settings, None)
         self.assertEqual(failure.exception.channel, "restricted_to_unrestricted")
 
-    @unittest.skipUnless(find_spec("pyscf"), "PySCF is required for the RKS assessment interface")
+    @unittest.skipUnless(find_spec("pyscf") and find_spec("pyscf.gto"), "PySCF is required for the RKS assessment interface")
     def test_three_channel_stability_distinguishes_margin_and_unresolved(self):
         settings = Settings("sto-3g", "pbe0")
         molecule = build_molecule(("H", "H"), [[0, 0, 0], [0, 0, 1.4]], settings)
@@ -187,7 +187,7 @@ class CpuBackendTests(unittest.TestCase):
         ):
             assess_rks_stability(reference)
 
-    @unittest.skipUnless(find_spec("pyscf"), "PySCF is required for exact semilocal orbital stability")
+    @unittest.skipUnless(find_spec("pyscf") and find_spec("pyscf.gto"), "PySCF is required for exact semilocal orbital stability")
     def test_semilocal_complex_curvature_matches_full_hessian_with_rotated_orbitals(self):
         from pyscf.scf.stability import _gen_hop_rhf_external
 
@@ -214,7 +214,7 @@ class CpuBackendTests(unittest.TestCase):
             batched = _rks_stability_block_operator(reference, name)
             np.testing.assert_allclose(batched(vectors), [native(vector) for vector in vectors], atol=1e-12, rtol=0)
 
-    @unittest.skipUnless(find_spec("pyscf"), "PySCF is required for DFT stability checks")
+    @unittest.skipUnless(find_spec("pyscf") and find_spec("pyscf.gto"), "PySCF is required for DFT stability checks")
     def test_restricted_dft_checks_stationary_orbitals_with_exactly_zero_gradient(self):
         mf = SimpleNamespace(xc="pbe0", mo_coeff=np.eye(2), mo_occ=np.array([2.0, 0.0]))
         internal = (np.zeros(1), lambda v: 0.5 * v, np.ones(1))
@@ -251,7 +251,7 @@ class CpuBackendTests(unittest.TestCase):
             else:
                 self.assertIs(failure.exception, internal)
 
-    @unittest.skipUnless(find_spec("pyscf"), "PySCF Davidson is required")
+    @unittest.skipUnless(find_spec("pyscf") and find_spec("pyscf.gto"), "PySCF Davidson is required")
     def test_stability_seeds_find_negative_mode_in_an_orthogonal_block(self):
         diagonal = np.linspace(0.1, 3.0, 32)
         diagonal[-2:] = 3.0
@@ -272,7 +272,7 @@ class CpuBackendTests(unittest.TestCase):
             else:
                 self.assertGreater(block.call_count, 1)
 
-    @unittest.skipUnless(find_spec("pyscf"), "PySCF is required for the stability solver")
+    @unittest.skipUnless(find_spec("pyscf") and find_spec("pyscf.gto"), "PySCF is required for the stability solver")
     def test_low_gap_projection_only_accepts_a_native_negative_witness(self):
         from pyscf import lib
 
@@ -294,7 +294,7 @@ class CpuBackendTests(unittest.TestCase):
                 iterative.assert_not_called()
                 self.assertLess(result.curvature, 0)
 
-    @unittest.skipUnless(find_spec("pyscf"), "PySCF Davidson is required")
+    @unittest.skipUnless(find_spec("pyscf") and find_spec("pyscf.gto"), "PySCF Davidson is required")
     def test_stability_verifies_negative_direction_even_with_unconverged_ritz_pair(self):
         diagonal = np.linspace(-0.5, 1.0, 32)
         trial = np.eye(len(diagonal))[0] + 0.3 * np.eye(len(diagonal))[-1]
@@ -304,7 +304,7 @@ class CpuBackendTests(unittest.TestCase):
         np.testing.assert_allclose(mode, trial / np.linalg.norm(trial))
         self.assertLess(mode @ (diagonal * mode), 0.0)
 
-    @unittest.skipUnless(find_spec("pyscf"), "PySCF Davidson is required")
+    @unittest.skipUnless(find_spec("pyscf") and find_spec("pyscf.gto"), "PySCF Davidson is required")
     def test_stability_rejects_unverified_ritz_results_and_restarts_reproducibly(self):
         diagonal = np.linspace(0.1, 1.0, 32)
         trial = np.eye(len(diagonal))[:2]
@@ -411,7 +411,7 @@ class CpuBackendTests(unittest.TestCase):
         self.assertEqual(gradient.cphf_conv_tol, settings.cphf_conv_tol)
         self.assertEqual(gradient.cphf_max_cycle, settings.cphf_max_cycle)
 
-    @unittest.skipUnless(find_spec("pyscf"), "PySCF required for the gradient adapter")
+    @unittest.skipUnless(find_spec("pyscf") and find_spec("pyscf.gto"), "PySCF required for the gradient adapter")
     def test_excited_gradient_cphf_override_is_local_and_restored_on_error(self):
         from pyscf.grad import tdrks
         from pyscf.scf import cphf as upstream_cphf
@@ -453,7 +453,7 @@ class CpuBackendTests(unittest.TestCase):
         self.assertEqual(solve.call_count, 2)
         solve.assert_called_with(*args, max_cycle=gradient.cphf_max_cycle, tol=gradient.cphf_conv_tol)
 
-    @unittest.skipUnless(find_spec("pyscf"), "PySCF required for the Krylov solver")
+    @unittest.skipUnless(find_spec("pyscf") and find_spec("pyscf.gto"), "PySCF required for the Krylov solver")
     def test_excited_cphf_corrects_small_defect_and_checks_the_true_residual(self):
         from pyscf import lib
         from pyscf.scf import cphf
@@ -494,7 +494,7 @@ class CpuBackendTests(unittest.TestCase):
             _solve_excited_response(*args, **options)
             krylov.assert_not_called()
 
-    @unittest.skipUnless(find_spec("pyscf"), "PySCF required to inspect electronic setup")
+    @unittest.skipUnless(find_spec("pyscf") and find_spec("pyscf.gto"), "PySCF required to inspect electronic setup")
     def test_real_pyscf_setup_is_direct_closed_shell_and_unpruned(self):
         from pyscf.scf.hf import SCF
 

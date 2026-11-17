@@ -9,7 +9,7 @@ from pyscf_esd import harmonic_spectrum
 from pyscf_esd.pyscf_adapter import vertical_gradient
 
 
-@unittest.skipUnless(find_spec("pyscf"), "PySCF is required to test the adapter")
+@unittest.skipUnless(find_spec("pyscf") and find_spec("pyscf.gto"), "PySCF is required to test the adapter")
 class VerticalGradientTests(unittest.TestCase):
     def setUp(self):
         from pyscf import gto

@@ -9,7 +9,7 @@ import numpy as np
 from pyscf_esd.cis_integrals import IntegralDerivativeEngine, IntegralValues
 
 
-@unittest.skipUnless(find_spec("pyscf"), "PySCF is required for AO derivative checks")
+@unittest.skipUnless(find_spec("pyscf") and find_spec("pyscf.gto"), "PySCF is required for AO derivative checks")
 class CISIntegralDerivativeTests(unittest.TestCase):
     def setUp(self):
         from pyscf import gto, lib

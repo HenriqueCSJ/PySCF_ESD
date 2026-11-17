@@ -15,7 +15,7 @@ from pyscf_esd.pyscf_adapter import VerticalGradientParameters
 from pyscf_esd.state_tracking import StateTrackingError
 
 
-@unittest.skipUnless(find_spec("pyscf"), "PySCF is required for the workflow")
+@unittest.skipUnless(find_spec("pyscf") and find_spec("pyscf.gto"), "PySCF is required for the workflow")
 class CpuWorkflowTests(unittest.TestCase):
     def setUp(self):
         self.geometry = np.zeros((2, 3))

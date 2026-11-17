@@ -33,7 +33,7 @@ def _point(ground, index, phase, direction=(1, 0, 0)):
     )
 
 
-@unittest.skipUnless(find_spec("pyscf"), "PySCF is required for cross-geometry overlaps")
+@unittest.skipUnless(find_spec("pyscf") and find_spec("pyscf.gto"), "PySCF is required for cross-geometry overlaps")
 class AnharmonicPySCFTests(unittest.TestCase):
     @patch("pyscf.gto.intor_cross", return_value=np.eye(4))
     def test_periodic_phase_and_reordering_on_common_energies(self, overlap):

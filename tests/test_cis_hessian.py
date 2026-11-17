@@ -9,7 +9,7 @@ from pyscf_esd.cis_hessian import analytic_cis_hessian, analytic_cis_transition_
 from pyscf_esd.state_tracking import orbital_overlap_blocks, track_state
 
 
-@unittest.skipUnless(find_spec("pyscf"), "PySCF is required for the CIS Hessian")
+@unittest.skipUnless(find_spec("pyscf") and find_spec("pyscf.gto"), "PySCF is required for the CIS Hessian")
 class CISHessianTests(unittest.TestCase):
     def setUp(self):
         from pyscf import gto, lib

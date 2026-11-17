@@ -95,7 +95,7 @@ class TDADipoleTests(unittest.TestCase):
         _, rotation = _rigid_motion_errors(coords, -dipole, derivative)
         self.assertGreater(rotation, 1.)
 
-    @unittest.skipUnless(find_spec("pyscf"), "PySCF is required for the analytic AO integrals")
+    @unittest.skipUnless(find_spec("pyscf") and find_spec("pyscf.gto"), "PySCF is required for the analytic AO integrals")
     def test_minimal_homonuclear_dipole_matches_contracted_gaussian_formula(self):
         from pyscf import gto
 

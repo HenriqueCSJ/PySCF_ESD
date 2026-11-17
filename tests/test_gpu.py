@@ -139,7 +139,7 @@ class GpuBackendTests(unittest.TestCase):
         self.assertTrue(all(isinstance(array, DeviceArray) for array in inputs))
         np.testing.assert_array_equal(np.vstack(inputs[:2]), np.eye(17))
 
-    @unittest.skipUnless(find_spec("pyscf"), "PySCF is required for the Krylov solver")
+    @unittest.skipUnless(find_spec("pyscf") and find_spec("pyscf.gto"), "PySCF is required for the Krylov solver")
     def test_hessian_cphf_corrects_a_false_convergence_and_verifies_the_result(self):
         occupied = np.array([True, True, False, False])
         energy = np.array([-1.0, -0.4, 0.3, 0.8])

@@ -22,3 +22,5 @@ pyscf-esd = "pyscf_esd.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+include = ["pyscf_esd", "pyscf_esd.*", "pyscf.esd", "pyscf.esd.*"]
+namespaces = true

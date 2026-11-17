@@ -7,7 +7,7 @@
 [![License GPL-3.0-only](https://img.shields.io/badge/License-GPL--3.0--only-596773)](LICENSE)
 [![Methods paper PDF](https://img.shields.io/badge/Methods%20paper-PDF-913F62)](docs/paper/pyscf-esd.pdf)
 
-**[Quick start](#quick-start) · [Default and options](#default-and-options) · [Method guide](docs/using-methods.md) · [Spectra gallery](#spectra-gallery) · [Output](#output) · [Methods paper](#methods-paper)**
+**[Quick start](#quick-start) · [PySCF module](#use-as-a-pyscf-module) · [Default and options](#default-and-options) · [Method guide](docs/using-methods.md) · [Spectra gallery](#spectra-gallery) · [Output](#output) · [Methods paper](#methods-paper)**
 
 ## Quick start
 
@@ -41,6 +41,24 @@ pyscf-esd water.xyz --model vg --basis '6-31+g*' --output water-vg.esd
 This example explicitly selects vertical gradient (VG) for a small installation check.
 
 </details>
+
+## Use as a PySCF module
+
+After installing `.[workflow]` in your PySCF environment, import the [namespace extension](https://pyscf.org/user/extensions.html) from a Python script.
+
+```python
+from pyscf import esd, gto
+
+mol = gto.M(
+    atom="O 0 0 0; H -0.7677654 0 0.5849831; H 0.7677654 0 0.5849831",
+    basis="6-31+g*", unit="Angstrom",
+)
+result = esd.run(mol, xc="pbe0", model="vg")
+absorption = result.spectra["absorption"]
+fluorescence = result.spectra["emission"]
+```
+
+`esd.run` takes a built, closed-shell molecule with a named all-electron spherical basis and uses its geometry, basis and charge. Choose `model="auto"`, `"ah"` or `"vg"` and use the zero-based `target_index` to select a singlet. The result includes `diagnostics` and `physical_properties`. The workflow runs gas-phase electronic calculations. For prepared solvated data use `esd.run_prepared_ah` and the [C-PCM setup](docs/using-methods.md#choosing-a-solvent). The [advanced CPU API](docs/using-methods.md#choosing-the-level-of-theory) is also available as `esd.Settings` and `esd.run_vibronic`.
 
 ## Default and options
 

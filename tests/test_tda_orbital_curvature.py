@@ -141,7 +141,7 @@ def test_exact_stationary_orbital_and_tda_curvature():
     _assert_close(contraction(geometry) + contract_first, expected)
 
 
-@unittest.skipUnless(find_spec("pyscf"), "PySCF is required")
+@unittest.skipUnless(find_spec("pyscf") and find_spec("pyscf.gto"), "PySCF is required")
 def test_overlap_uses_analytic_nuclear_derivatives():
     from pyscf import gto
 
@@ -163,7 +163,7 @@ def test_overlap_uses_analytic_nuclear_derivatives():
     _assert_close(op.second_one_electron(np.broadcast_to(x[0], x.shape), y).overlap, np.zeros((2, 2)))
 
 
-@unittest.skipUnless(find_spec("pyscf"), "PySCF is required")
+@unittest.skipUnless(find_spec("pyscf") and find_spec("pyscf.gto"), "PySCF is required")
 def test_native_df_rks_tda_action_and_occupied_cphf():
     from pyscf import dft, gto, solvent
 

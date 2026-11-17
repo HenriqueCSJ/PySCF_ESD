@@ -4,7 +4,7 @@ from importlib.util import find_spec
 import numpy as np
 
 
-@unittest.skipUnless(find_spec("pyscf"), "PySCF is required")
+@unittest.skipUnless(find_spec("pyscf") and find_spec("pyscf.gto"), "PySCF is required")
 class MolecularDFDerivativeTests(unittest.TestCase):
     def setUp(self):
         from pyscf import dft, gto

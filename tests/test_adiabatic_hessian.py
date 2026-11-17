@@ -48,7 +48,7 @@ def _assignments(spectrum, *, reverse=False):
     return result
 
 
-@unittest.skipUnless(find_spec("pyscf"), "PySCF is required to test the adapter")
+@unittest.skipUnless(find_spec("pyscf") and find_spec("pyscf.gto"), "PySCF is required to test the adapter")
 class AdiabaticHessianTests(unittest.TestCase):
     def setUp(self):
         from pyscf.data.nist import AMU2AU
