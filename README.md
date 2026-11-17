@@ -203,6 +203,10 @@ Read `run.esd/properties.json` for numerical results. With emission enabled, `sp
 
 The [numerical output guide](docs/numerical-results.md) shows how to extract these values, oscillator strengths, 0–0 and Stokes energies, mode contributions, and line assignments. Use `diagnostics.json` to check convergence, state tracking, derivative provenance, and coverage. The CSV files provide all retained lines and Gaussian profiles.
 
+## Unrestricted DFT and phosphorescence
+
+The first [unrestricted DFT and phosphorescence APIs](docs/phosphorescence.md) accept a converged high-spin UKS reference for analytic triplet derivatives and prepared spin–orbit matrices for electronic phosphorescence rates. The guide specifies the input conventions, the three triplet sublevels, and the remaining steps for vibronic phosphorescence.
+
 ## Methods paper
 
 The [complete article (PDF)](docs/paper/pyscf-esd.pdf) includes the abstract, introduction, methods, results and discussion, and conclusions. It presents nine molecular structures, a quantitative benchmark table, and the eight selected spectra within the results that discuss them. The [main LaTeX source](docs/paper/main.tex) includes the [electronic response](docs/paper/electronic.tex), [nuclear methods](docs/paper/nuclear.tex), and [benchmark table](docs/paper/benchmark-table.tex).

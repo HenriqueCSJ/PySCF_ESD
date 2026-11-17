@@ -76,6 +76,8 @@ each_line_contribution = lines.population_weighted_einstein_a_s_inverse
 
 For low-level harmonic or anharmonic sticks, use `esd.summarize_spectral_properties({"emission": emission_sticks})`. Coverage is `unassessed` unless the caller supplies an assessed status. The in-memory report includes the stick properties. The CLI derives its Gaussian peak summaries when it generates the profiles.
 
+The [phosphorescence guide](phosphorescence.md) documents the separate prepared spin–orbit result object, including electronic rates for individual triplet sublevels and their thermal average.
+
 ## Thermal profiles and prepared rotors
 
 For `thermal_harmonic_spectrum` or `thermal_separable_spectrum`, use `positive_photon_weighted_strength`. It is the integral of the positive-photon-energy signal weighted by $E$ for absorption and $E^3$ for emission, with $E$ in Hartree. Multiply by $2/3$ for total oscillator strength or by $4\alpha^3/(3t_{\mathrm{au}})$ for the vacuum radiative rate. The same factors convert the returned profile density to physical units.
