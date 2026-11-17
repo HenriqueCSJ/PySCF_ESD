@@ -199,7 +199,9 @@ This archived RHF–CIS/6-31G test exercises the analytic derivatives and AH ass
 
 ## Output
 
-Open `diagnostics.json` first. It records the effective method, convergence and state checks, vibrational coverage, and the reason for any incomplete result. When available, the CLI writes assigned absorption and emission sticks, Gaussian profiles, and `properties.json` with oscillator strengths, vacuum radiative rates, spectral moments and peak separation. Partial outputs are labeled accordingly. A vacuum radiative lifetime describes spontaneous emission on the modeled surfaces. Experimental fluorescence lifetimes and yields also depend on nonradiative processes.
+Read `run.esd/properties.json` for numerical results. With emission enabled, `spectra.emission.vacuum_radiative_rate_s_inverse` gives $k_f$ in s⁻¹ and `spectra.emission.vacuum_radiative_lifetime_s` gives $1/k_f$ in seconds. Python exposes the same values in `result.physical_properties`.
+
+The [numerical output guide](docs/numerical-results.md) shows how to extract these values, oscillator strengths, 0–0 and Stokes energies, mode contributions, and line assignments. Use `diagnostics.json` to check convergence, state tracking, derivative provenance, and coverage. The CSV files provide all retained lines and Gaussian profiles.
 
 ## Methods paper
 

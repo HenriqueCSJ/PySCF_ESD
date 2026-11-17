@@ -16,6 +16,8 @@ In a PySCF script, use `from pyscf import esd`. The [`esd.run(mol, ...)` example
 | AH with custom electronic data or selected FC, HT and Duschinsky terms | [`run_prepared_ah` and `harmonic_spectrum`](#spectra-from-prepared-electronic-data) |
 | DVR, thermal rotor plus harmonic spectators, coupled modes | [Prepared anharmonic models](#prepared-anharmonic-models) |
 
+Use the [numerical output guide](numerical-results.md) for radiative rates, lifetimes, oscillator strengths, mode analysis, and reading the CLI or Python results.
+
 ## From a single XYZ
 
 ```bash
