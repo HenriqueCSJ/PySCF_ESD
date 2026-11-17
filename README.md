@@ -7,7 +7,7 @@
 [![License GPL-3.0-only](https://img.shields.io/badge/License-GPL--3.0--only-596773)](LICENSE)
 [![Methods paper PDF](https://img.shields.io/badge/Methods%20paper-PDF-913F62)](docs/paper/pyscf-esd.pdf)
 
-**[Quick start](#quick-start) · [PySCF module](#use-as-a-pyscf-module) · [Default and options](#default-and-options) · [Method guide](docs/using-methods.md) · [Spectra gallery](#spectra-gallery) · [Output](#output) · [Methods paper](#methods-paper)**
+**[Quick start](#quick-start) · [PySCF module](#use-as-a-pyscf-module) · [Default and options](#default-and-options) · [Method guide](docs/using-methods.md) · [Spectra gallery](#spectra-gallery) · [Output](#output) · [Phosphorescence](#unrestricted-dft-and-phosphorescence) · [Methods paper](#methods-paper)**
 
 ## Quick start
 
@@ -197,6 +197,15 @@ This archived RHF–CIS/6-31G test exercises the analytic derivatives and AH ass
 
 </details>
 
+<details>
+<summary><strong>Naphthalene · 77 K · spin–orbit phosphorescence</strong></summary>
+
+![Naphthalene phosphorescence at 77 K in gas and in a C-PCM solvent control, compared with hydrocarbon glass](docs/benchmarks/naphthalene-phosphorescence.png)
+
+Full-space spin–orbit response recovers the dominant perpendicular emission. Gas-phase AH with analytic spin-vibronic Herzberg–Teller coupling predicts a **15.54 s radiative lifetime** and **88.5% perpendicular emission**. Two ground-state ring fundamentals produce the calculated split. The matched Condon dielectric control leaves their separation near **0.025 eV** and shortens the radiative lifetime from **17.62 to 15.84 s**. The panels use each spectrum's own 0–0 energy as the origin for energy loss. [Benchmark and numerical data](docs/phosphorescence.md#naphthalene-benchmark) · [Glass spectrum](https://pstorage-acs-6854636.s3.amazonaws.com/6569049/jp6b07709_si_001.pdf)
+
+</details>
+
 ## Output
 
 Read `run.esd/properties.json` for numerical results. With emission enabled, `spectra.emission.vacuum_radiative_rate_s_inverse` gives $k_f$ in s⁻¹ and `spectra.emission.vacuum_radiative_lifetime_s` gives $1/k_f$ in seconds. Python exposes the same values in `result.physical_properties`.
@@ -209,9 +218,7 @@ The [unrestricted DFT and phosphorescence APIs](docs/phosphorescence.md) cover a
 
 ## Methods paper
 
-The methods paper documents the earlier 0 K qualification policy for the automatic anharmonic route. The [finite-temperature method guide](docs/using-methods.md#finite-temperature-anharmonicity) describes the current workflow.
-
-The [complete article (PDF)](docs/paper/pyscf-esd.pdf) includes the abstract, introduction, methods, results and discussion, and conclusions. It presents nine molecular structures, a quantitative benchmark table, and the eight selected spectra within the results that discuss them. The [main LaTeX source](docs/paper/main.tex) includes the [electronic response](docs/paper/electronic.tex), [nuclear methods](docs/paper/nuclear.tex), and [benchmark table](docs/paper/benchmark-table.tex).
+The [methods paper (PDF)](docs/paper/pyscf-esd.pdf) describes electronic state tracking, analytic response, finite-temperature anharmonic spectra, and full-space spin–orbit phosphorescence. The results include molecular structures, benchmark spectra, and the 77 K naphthalene dielectric control. The [main LaTeX source](docs/paper/main.tex) includes the [electronic response](docs/paper/electronic.tex), [nuclear methods](docs/paper/nuclear.tex), and [benchmark table](docs/paper/benchmark-table.tex).
 
 [Download the PDF directly](https://raw.githubusercontent.com/HenriqueCSJ/PySCF_ESD/main/docs/paper/pyscf-esd.pdf).
 

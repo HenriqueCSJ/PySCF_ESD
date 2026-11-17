@@ -1,0 +1,1553 @@
+{
+  "origin_cm_inverse": 20603.272532945502,
+  "origin_eV": 2.554480208883956,
+  "gaussian_fwhm_cm_inverse": 150.0,
+  "split_window_loss_cm_inverse": [
+    1200.0,
+    1790.0
+  ],
+  "initial_temperature_kelvin": 0.0,
+  "initial_state": "T1 vibrational vacuum",
+  "max_total_S0_quanta": 3,
+  "positive_photon_stick_count": 20825,
+  "stick_dipole_strength_coverage": {
+    "condon": 0.6407120753222125,
+    "condon_plus_linear_ht": 0.6096365399528322
+  },
+  "intensity_observable": "reduced dipole strength, incoherently averaged over Cartesian triplet sublevels",
+  "exact_0K_reconstructed_peaks": {
+    "condon": {
+      "split_cm_inverse": 201.75,
+      "valley_loss_from_00_cm_inverse": 1525.25,
+      "valley_height_fraction_of_pair_max": 0.5851219250011547,
+      "peaks": [
+        {
+          "loss_from_00_cm_inverse": 1427.0,
+          "absolute_photon_energy_eV": 2.3775547591890835,
+          "relative_peak_height_vs_pair_max": 0.9387786705898369,
+          "contribution_fractions_by_total_quanta": {
+            "0": 1.1142687334806313e-109,
+            "1": 0.9859862216522813,
+            "2": 0.005723322491769341,
+            "3": 0.008290455855949001
+          },
+          "full_ht_profile_height_fractions_order_fc_ht_squared_interference": [
+            1.0260862115381917,
+            0.020646226527735997,
+            -0.04673243806592734
+          ],
+          "dominant_sticks": [
+            {
+              "stick_loss_cm_inverse": 1421.4805141582651,
+              "contribution_fraction_of_peak_height": 0.9257314610039458,
+              "dipole_strength_au2_order_fc_ht_squared_interference_total": [
+                2.946307020769392e-10,
+                1.466923022864192e-13,
+                -1.3118363733321216e-11,
+                2.816590306459044e-10
+              ],
+              "final_modes": [
+                {
+                  "s0_mode_1_based": 34,
+                  "quanta": 1,
+                  "harmonic_frequency_cm_inverse": 1421.4805141582658,
+                  "d2h_irrep": "Ag"
+                }
+              ]
+            },
+            {
+              "stick_loss_cm_inverse": 1486.1669629543371,
+              "contribution_fraction_of_peak_height": 0.05377753381024374,
+              "dipole_strength_au2_order_fc_ht_squared_interference_total": [
+                2.6248838380603e-11,
+                5.33370460313949e-14,
+                -2.34056799983509e-12,
+                2.3961607426799305e-11
+              ],
+              "final_modes": [
+                {
+                  "s0_mode_1_based": 35,
+                  "quanta": 1,
+                  "harmonic_frequency_cm_inverse": 1486.1669629543358,
+                  "d2h_irrep": "Ag"
+                }
+              ]
+            },
+            {
+              "stick_loss_cm_inverse": 1628.6723778805497,
+              "contribution_fraction_of_peak_height": 0.006429424214045273,
+              "dipole_strength_au2_order_fc_ht_squared_interference_total": [
+                3.06155457772999e-10,
+                7.737289621076591e-14,
+                9.607240927259235e-12,
+                3.15840071596469e-10
+              ],
+              "final_modes": [
+                {
+                  "s0_mode_1_based": 38,
+                  "quanta": 1,
+                  "harmonic_frequency_cm_inverse": 1628.672377880551,
+                  "d2h_irrep": "Ag"
+                }
+              ]
+            },
+            {
+              "stick_loss_cm_inverse": 1556.4420665074397,
+              "contribution_fraction_of_peak_height": 0.00491527418585566,
+              "dipole_strength_au2_order_fc_ht_squared_interference_total": [
+                1.2285467270746655e-11,
+                4.394518181098732e-15,
+                4.3168692107799264e-13,
+                1.2721548710005746e-11
+              ],
+              "final_modes": [
+                {
+                  "s0_mode_1_based": 8,
+                  "quanta": 3,
+                  "harmonic_frequency_cm_inverse": 518.8140221691463,
+                  "d2h_irrep": "Ag"
+                }
+              ]
+            },
+            {
+              "stick_loss_cm_inverse": 1321.0613924999784,
+              "contribution_fraction_of_peak_height": 0.0015182611820914007,
+              "dipole_strength_au2_order_fc_ht_squared_interference_total": [
+                1.9192145919835823e-12,
+                6.615994240874692e-17,
+                2.1402790002128784e-14,
+                1.9406835419281197e-12
+              ],
+              "final_modes": [
+                {
+                  "s0_mode_1_based": 4,
+                  "quanta": 2,
+                  "harmonic_frequency_cm_inverse": 401.1236851654153,
+                  "d2h_irrep": "B2g"
+                },
+                {
+                  "s0_mode_1_based": 8,
+                  "quanta": 1,
+                  "harmonic_frequency_cm_inverse": 518.8140221691463,
+                  "d2h_irrep": "Ag"
+                }
+              ]
+            },
+            {
+              "stick_loss_cm_inverse": 1497.1221282258537,
+              "contribution_fraction_of_peak_height": 0.0014127804719088948,
+              "dipole_strength_au2_order_fc_ht_squared_interference_total": [
+                8.210766288117481e-13,
+                1.1498053679047401e-18,
+                -1.27132377533316e-15,
+                8.198064548417829e-13
+              ],
+              "final_modes": [
+                {
+                  "s0_mode_1_based": 6,
+                  "quanta": 1,
+                  "harmonic_frequency_cm_inverse": 497.48601980140234,
+                  "d2h_irrep": "B1u"
+                },
+                {
+                  "s0_mode_1_based": 20,
+                  "quanta": 1,
+                  "harmonic_frequency_cm_inverse": 999.6361084244513,
+                  "d2h_irrep": "B1u"
+                }
+              ]
+            },
+            {
+              "stick_loss_cm_inverse": 1507.9041315929157,
+              "contribution_fraction_of_peak_height": 0.0013995945053317475,
+              "dipole_strength_au2_order_fc_ht_squared_interference_total": [
+                9.941583721889583e-13,
+                1.39218264505338e-18,
+                -1.539316953692375e-15,
+                9.92620447417911e-13
+              ],
+              "final_modes": [
+                {
+                  "s0_mode_1_based": 10,
+                  "quanta": 1,
+                  "harmonic_frequency_cm_inverse": 646.0452544632777,
+                  "d2h_irrep": "Au"
+                },
+                {
+                  "s0_mode_1_based": 16,
+                  "quanta": 1,
+                  "harmonic_frequency_cm_inverse": 861.8588771296365,
+                  "d2h_irrep": "Au"
+                }
+              ]
+            },
+            {
+              "stick_loss_cm_inverse": 1513.7860617719518,
+              "contribution_fraction_of_peak_height": 0.0010449635122237505,
+              "dipole_strength_au2_order_fc_ht_squared_interference_total": [
+                8.381851999263736e-13,
+                2.8894259551080604e-17,
+                9.347314204387971e-15,
+                8.475614083903126e-13
+              ],
+              "final_modes": [
+                {
+                  "s0_mode_1_based": 6,
+                  "quanta": 2,
+                  "harmonic_frequency_cm_inverse": 497.48601980140234,
+                  "d2h_irrep": "B1u"
+                },
+                {
+                  "s0_mode_1_based": 8,
+                  "quanta": 1,
+                  "harmonic_frequency_cm_inverse": 518.8140221691463,
+                  "d2h_irrep": "Ag"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "loss_from_00_cm_inverse": 1628.75,
+          "absolute_photon_energy_eV": 2.3525409473629164,
+          "relative_peak_height_vs_pair_max": 1.0,
+          "contribution_fractions_by_total_quanta": {
+            "0": 1.0636434734491993e-142,
+            "1": 0.9171741454682365,
+            "2": 0.060368019214073775,
+            "3": 0.0224578353176895
+          },
+          "full_ht_profile_height_fractions_order_fc_ht_squared_interference": [
+            0.9227855535664008,
+            0.04797403179922094,
+            0.029240414634378934
+          ],
+          "dominant_sticks": [
+            {
+              "stick_loss_cm_inverse": 1628.6723778805497,
+              "contribution_fraction_of_peak_height": 0.9064467239691614,
+              "dipole_strength_au2_order_fc_ht_squared_interference_total": [
+                3.06155457772999e-10,
+                7.737289621076591e-14,
+                9.607240927259235e-12,
+                3.15840071596469e-10
+              ],
+              "final_modes": [
+                {
+                  "s0_mode_1_based": 38,
+                  "quanta": 1,
+                  "harmonic_frequency_cm_inverse": 1628.672377880551,
+                  "d2h_irrep": "Ag"
+                }
+              ]
+            },
+            {
+              "stick_loss_cm_inverse": 1689.6229720082802,
+              "contribution_fraction_of_peak_height": 0.05460003183801244,
+              "dipole_strength_au2_order_fc_ht_squared_interference_total": [
+                2.9113772205780684e-11,
+                2.9944715600463534e-14,
+                1.7410697675986888e-12,
+                3.0884786688979836e-11
+              ],
+              "final_modes": [
+                {
+                  "s0_mode_1_based": 8,
+                  "quanta": 1,
+                  "harmonic_frequency_cm_inverse": 518.8140221691463,
+                  "d2h_irrep": "Ag"
+                },
+                {
+                  "s0_mode_1_based": 28,
+                  "quanta": 1,
+                  "harmonic_frequency_cm_inverse": 1170.8089498391334,
+                  "d2h_irrep": "Ag"
+                }
+              ]
+            },
+            {
+              "stick_loss_cm_inverse": 1556.4420665074397,
+              "contribution_fraction_of_peak_height": 0.01909786909289914,
+              "dipole_strength_au2_order_fc_ht_squared_interference_total": [
+                1.2285467270746655e-11,
+                4.394518181098732e-15,
+                4.3168692107799264e-13,
+                1.2721548710005746e-11
+              ],
+              "final_modes": [
+                {
+                  "s0_mode_1_based": 8,
+                  "quanta": 3,
+                  "harmonic_frequency_cm_inverse": 518.8140221691463,
+                  "d2h_irrep": "Ag"
+                }
+              ]
+            },
+            {
+              "stick_loss_cm_inverse": 1486.1669629543371,
+              "contribution_fraction_of_peak_height": 0.006346372205024183,
+              "dipole_strength_au2_order_fc_ht_squared_interference_total": [
+                2.6248838380603e-11,
+                5.33370460313949e-14,
+                -2.34056799983509e-12,
+                2.3961607426799305e-11
+              ],
+              "final_modes": [
+                {
+                  "s0_mode_1_based": 35,
+                  "quanta": 1,
+                  "harmonic_frequency_cm_inverse": 1486.1669629543358,
+                  "d2h_irrep": "Ag"
+                }
+              ]
+            },
+            {
+              "stick_loss_cm_inverse": 1421.4805141582651,
+              "contribution_fraction_of_peak_height": 0.004381047308581938,
+              "dipole_strength_au2_order_fc_ht_squared_interference_total": [
+                2.946307020769392e-10,
+                1.466923022864192e-13,
+                -1.3118363733321216e-11,
+                2.816590306459044e-10
+              ],
+              "final_modes": [
+                {
+                  "s0_mode_1_based": 34,
+                  "quanta": 1,
+                  "harmonic_frequency_cm_inverse": 1421.4805141582658,
+                  "d2h_irrep": "Ag"
+                }
+              ]
+            },
+            {
+              "stick_loss_cm_inverse": 1617.914368383804,
+              "contribution_fraction_of_peak_height": 0.002530000998955355,
+              "dipole_strength_au2_order_fc_ht_squared_interference_total": [
+                8.669688764751465e-13,
+                1.2140711755736315e-18,
+                -1.3423815834726582e-15,
+                8.656277089628495e-13
+              ],
+              "final_modes": [
+                {
+                  "s0_mode_1_based": 15,
+                  "quanta": 2,
+                  "harmonic_frequency_cm_inverse": 808.9571841919026,
+                  "d2h_irrep": "B1u"
+                }
+              ]
+            },
+            {
+              "stick_loss_cm_inverse": 1658.9131962328795,
+              "contribution_fraction_of_peak_height": 0.002276176527882468,
+              "dipole_strength_au2_order_fc_ht_squared_interference_total": [
+                8.599943259046492e-13,
+                2.964607257122832e-17,
+                9.590526269048831e-15,
+                8.696144982462692e-13
+              ],
+              "final_modes": [
+                {
+                  "s0_mode_1_based": 4,
+                  "quanta": 1,
+                  "harmonic_frequency_cm_inverse": 401.1236851654153,
+                  "d2h_irrep": "B2g"
+                },
+                {
+                  "s0_mode_1_based": 8,
+                  "quanta": 1,
+                  "harmonic_frequency_cm_inverse": 518.8140221691463,
+                  "d2h_irrep": "Ag"
+                },
+                {
+                  "s0_mode_1_based": 11,
+                  "quanta": 1,
+                  "harmonic_frequency_cm_inverse": 738.975488898317,
+                  "d2h_irrep": "B2g"
+                }
+              ]
+            },
+            {
+              "stick_loss_cm_inverse": 1616.3592753958499,
+              "contribution_fraction_of_peak_height": 0.001086470875536932,
+              "dipole_strength_au2_order_fc_ht_squared_interference_total": [
+                3.7396750879725443e-13,
+                5.236902792609457e-19,
+                -5.790370453291865e-16,
+                3.733889954422045e-13
+              ],
+              "final_modes": [
+                {
+                  "s0_mode_1_based": 14,
+                  "quanta": 2,
+                  "harmonic_frequency_cm_inverse": 808.1796376979249,
+                  "d2h_irrep": "B3g"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "condon_plus_linear_ht": {
+      "split_cm_inverse": 203.25,
+      "valley_loss_from_00_cm_inverse": 1522.0,
+      "valley_height_fraction_of_pair_max": 0.5591261033451551,
+      "peaks": [
+        {
+          "loss_from_00_cm_inverse": 1427.75,
+          "absolute_photon_energy_eV": 2.377461771041031,
+          "relative_peak_height_vs_pair_max": 0.8438511066149597,
+          "contribution_fractions_by_total_quanta": {
+            "0": 8.767899298380475e-110,
+            "1": 0.9651742737508111,
+            "2": 0.021331669781706718,
+            "3": 0.01349405646748295
+          },
+          "full_ht_profile_height_fractions_order_fc_ht_squared_interference": [
+            1.0259668950304763,
+            0.020759926226401458,
+            -0.046726821256876154
+          ],
+          "dominant_sticks": [
+            {
+              "stick_loss_cm_inverse": 1421.4805141582651,
+              "contribution_fraction_of_peak_height": 0.9070214167878745,
+              "dipole_strength_au2_order_fc_ht_squared_interference_total": [
+                2.946307020769392e-10,
+                1.466923022864192e-13,
+                -1.3118363733321216e-11,
+                2.816590306459044e-10
+              ],
+              "final_modes": [
+                {
+                  "s0_mode_1_based": 34,
+                  "quanta": 1,
+                  "harmonic_frequency_cm_inverse": 1421.4805141582658,
+                  "d2h_irrep": "Ag"
+                }
+              ]
+            },
+            {
+              "stick_loss_cm_inverse": 1486.1669629543371,
+              "contribution_fraction_of_peak_height": 0.05091975009482532,
+              "dipole_strength_au2_order_fc_ht_squared_interference_total": [
+                2.6248838380603e-11,
+                5.33370460313949e-14,
+                -2.34056799983509e-12,
+                2.3961607426799305e-11
+              ],
+              "final_modes": [
+                {
+                  "s0_mode_1_based": 35,
+                  "quanta": 1,
+                  "harmonic_frequency_cm_inverse": 1486.1669629543358,
+                  "d2h_irrep": "Ag"
+                }
+              ]
+            },
+            {
+              "stick_loss_cm_inverse": 1628.6723778805497,
+              "contribution_fraction_of_peak_height": 0.00706344229087997,
+              "dipole_strength_au2_order_fc_ht_squared_interference_total": [
+                3.06155457772999e-10,
+                7.737289621076591e-14,
+                9.607240927259235e-12,
+                3.15840071596469e-10
+              ],
+              "final_modes": [
+                {
+                  "s0_mode_1_based": 38,
+                  "quanta": 1,
+                  "harmonic_frequency_cm_inverse": 1628.672377880551,
+                  "d2h_irrep": "Ag"
+                }
+              ]
+            },
+            {
+              "stick_loss_cm_inverse": 1498.0965559032181,
+              "contribution_fraction_of_peak_height": 0.005365664904226201,
+              "dipole_strength_au2_order_fc_ht_squared_interference_total": [
+                2.3903275605481188e-42,
+                3.0511225135362843e-12,
+                0.0,
+                3.0511225135362843e-12
+              ],
+              "final_modes": [
+                {
+                  "s0_mode_1_based": 8,
+                  "quanta": 1,
+                  "harmonic_frequency_cm_inverse": 518.8140221691463,
+                  "d2h_irrep": "Ag"
+                },
+                {
+                  "s0_mode_1_based": 19,
+                  "quanta": 1,
+                  "harmonic_frequency_cm_inverse": 979.2825337340726,
+                  "d2h_irrep": "B2g"
+                }
+              ]
+            },
+            {
+              "stick_loss_cm_inverse": 1556.4420665074397,
+              "contribution_fraction_of_peak_height": 0.005348313877959725,
+              "dipole_strength_au2_order_fc_ht_squared_interference_total": [
+                1.2285467270746655e-11,
+                4.394518181098732e-15,
+                4.3168692107799264e-13,
+                1.2721548710005746e-11
+              ],
+              "final_modes": [
+                {
+                  "s0_mode_1_based": 8,
+                  "quanta": 3,
+                  "harmonic_frequency_cm_inverse": 518.8140221691463,
+                  "d2h_irrep": "Ag"
+                }
+              ]
+            },
+            {
+              "stick_loss_cm_inverse": 1441.7352049571066,
+              "contribution_fraction_of_peak_height": 0.005230011580918208,
+              "dipole_strength_au2_order_fc_ht_squared_interference_total": [
+                3.1324086965785737e-38,
+                1.6556644061066849e-12,
+                4.585226067237539e-37,
+                1.6556644061066849e-12
+              ],
+              "final_modes": [
+                {
+                  "s0_mode_1_based": 8,
+                  "quanta": 1,
+                  "harmonic_frequency_cm_inverse": 518.8140221691463,
+                  "d2h_irrep": "Ag"
+                },
+                {
+                  "s0_mode_1_based": 17,
+                  "quanta": 1,
+                  "harmonic_frequency_cm_inverse": 922.9211827879615,
+                  "d2h_irrep": "B3g"
+                }
+              ]
+            },
+            {
+              "stick_loss_cm_inverse": 1438.751729503709,
+              "contribution_fraction_of_peak_height": 0.004031932094491579,
+              "dipole_strength_au2_order_fc_ht_squared_interference_total": [
+                7.146490704720289e-39,
+                1.2647169296894724e-12,
+                0.0,
+                1.2647169296894724e-12
+              ],
+              "final_modes": [
+                {
+                  "s0_mode_1_based": 4,
+                  "quanta": 1,
+                  "harmonic_frequency_cm_inverse": 401.1236851654153,
+                  "d2h_irrep": "B2g"
+                },
+                {
+                  "s0_mode_1_based": 8,
+                  "quanta": 2,
+                  "harmonic_frequency_cm_inverse": 518.8140221691463,
+                  "d2h_irrep": "Ag"
+                }
+              ]
+            },
+            {
+              "stick_loss_cm_inverse": 1544.7146637778346,
+              "contribution_fraction_of_peak_height": 0.0021182872299173663,
+              "dipole_strength_au2_order_fc_ht_squared_interference_total": [
+                1.1623895615806435e-37,
+                3.5329020691684417e-12,
+                -4.753567971889333e-37,
+                3.5329020691684417e-12
+              ],
+              "final_modes": [
+                {
+                  "s0_mode_1_based": 8,
+                  "quanta": 1,
+                  "harmonic_frequency_cm_inverse": 518.8140221691463,
+                  "d2h_irrep": "Ag"
+                },
+                {
+                  "s0_mode_1_based": 22,
+                  "quanta": 1,
+                  "harmonic_frequency_cm_inverse": 1025.9006416086875,
+                  "d2h_irrep": "B3g"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "loss_from_00_cm_inverse": 1631.0,
+          "absolute_photon_energy_eV": 2.3522619829187583,
+          "relative_peak_height_vs_pair_max": 1.0,
+          "contribution_fractions_by_total_quanta": {
+            "0": 3.967101738479074e-143,
+            "1": 0.9054563489761337,
+            "2": 0.07296337055497536,
+            "3": 0.02158028046889156
+          },
+          "full_ht_profile_height_fractions_order_fc_ht_squared_interference": [
+            0.9217827642301113,
+            0.04887517747337357,
+            0.029342058296516267
+          ],
+          "dominant_sticks": [
+            {
+              "stick_loss_cm_inverse": 1628.6723778805497,
+              "contribution_fraction_of_peak_height": 0.8618675194519072,
+              "dipole_strength_au2_order_fc_ht_squared_interference_total": [
+                3.06155457772999e-10,
+                7.737289621076591e-14,
+                9.607240927259235e-12,
+                3.15840071596469e-10
+              ],
+              "final_modes": [
+                {
+                  "s0_mode_1_based": 38,
+                  "quanta": 1,
+                  "harmonic_frequency_cm_inverse": 1628.672377880551,
+                  "d2h_irrep": "Ag"
+                }
+              ]
+            },
+            {
+              "stick_loss_cm_inverse": 1689.6229720082802,
+              "contribution_fraction_of_peak_height": 0.05521923618494634,
+              "dipole_strength_au2_order_fc_ht_squared_interference_total": [
+                2.9113772205780684e-11,
+                2.9944715600463534e-14,
+                1.7410697675986888e-12,
+                3.0884786688979836e-11
+              ],
+              "final_modes": [
+                {
+                  "s0_mode_1_based": 8,
+                  "quanta": 1,
+                  "harmonic_frequency_cm_inverse": 518.8140221691463,
+                  "d2h_irrep": "Ag"
+                },
+                {
+                  "s0_mode_1_based": 28,
+                  "quanta": 1,
+                  "harmonic_frequency_cm_inverse": 1170.8089498391334,
+                  "d2h_irrep": "Ag"
+                }
+              ]
+            },
+            {
+              "stick_loss_cm_inverse": 1687.1698466521639,
+              "contribution_fraction_of_peak_height": 0.03520670697406426,
+              "dipole_strength_au2_order_fc_ht_squared_interference_total": [
+                1.335190642791473e-22,
+                1.9019947919619986e-11,
+                2.318216691492642e-24,
+                1.901994791975582e-11
+              ],
+              "final_modes": [
+                {
+                  "s0_mode_1_based": 40,
+                  "quanta": 1,
+                  "harmonic_frequency_cm_inverse": 1687.1698466521625,
+                  "d2h_irrep": "B1g"
+                }
+              ]
+            },
+            {
+              "stick_loss_cm_inverse": 1556.4420665074397,
+              "contribution_fraction_of_peak_height": 0.017511019539201284,
+              "dipole_strength_au2_order_fc_ht_squared_interference_total": [
+                1.2285467270746655e-11,
+                4.394518181098732e-15,
+                4.3168692107799264e-13,
+                1.2721548710005746e-11
+              ],
+              "final_modes": [
+                {
+                  "s0_mode_1_based": 8,
+                  "quanta": 3,
+                  "harmonic_frequency_cm_inverse": 518.8140221691463,
+                  "d2h_irrep": "Ag"
+                }
+              ]
+            },
+            {
+              "stick_loss_cm_inverse": 1486.1669629543371,
+              "contribution_fraction_of_peak_height": 0.004933847052138246,
+              "dipole_strength_au2_order_fc_ht_squared_interference_total": [
+                2.6248838380603e-11,
+                5.33370460313949e-14,
+                -2.34056799983509e-12,
+                2.3961607426799305e-11
+              ],
+              "final_modes": [
+                {
+                  "s0_mode_1_based": 35,
+                  "quanta": 1,
+                  "harmonic_frequency_cm_inverse": 1486.1669629543358,
+                  "d2h_irrep": "Ag"
+                }
+              ]
+            },
+            {
+              "stick_loss_cm_inverse": 1679.963062573644,
+              "contribution_fraction_of_peak_height": 0.004544693484728422,
+              "dipole_strength_au2_order_fc_ht_squared_interference_total": [
+                3.976102180577697e-22,
+                2.2363547801030414e-12,
+                1.3105650752935521e-23,
+                2.236354780513757e-12
+              ],
+              "final_modes": [
+                {
+                  "s0_mode_1_based": 8,
+                  "quanta": 1,
+                  "harmonic_frequency_cm_inverse": 518.8140221691463,
+                  "d2h_irrep": "Ag"
+                },
+                {
+                  "s0_mode_1_based": 26,
+                  "quanta": 1,
+                  "harmonic_frequency_cm_inverse": 1161.1490404044985,
+                  "d2h_irrep": "B1g"
+                }
+              ]
+            },
+            {
+              "stick_loss_cm_inverse": 1544.7146637778346,
+              "contribution_fraction_of_peak_height": 0.003854396435227562,
+              "dipole_strength_au2_order_fc_ht_squared_interference_total": [
+                1.1623895615806435e-37,
+                3.5329020691684417e-12,
+                -4.753567971889333e-37,
+                3.5329020691684417e-12
+              ],
+              "final_modes": [
+                {
+                  "s0_mode_1_based": 8,
+                  "quanta": 1,
+                  "harmonic_frequency_cm_inverse": 518.8140221691463,
+                  "d2h_irrep": "Ag"
+                },
+                {
+                  "s0_mode_1_based": 22,
+                  "quanta": 1,
+                  "harmonic_frequency_cm_inverse": 1025.9006416086875,
+                  "d2h_irrep": "B3g"
+                }
+              ]
+            },
+            {
+              "stick_loss_cm_inverse": 1421.4805141582651,
+              "contribution_fraction_of_peak_height": 0.0034411203090380102,
+              "dipole_strength_au2_order_fc_ht_squared_interference_total": [
+                2.946307020769392e-10,
+                1.466923022864192e-13,
+                -1.3118363733321216e-11,
+                2.816590306459044e-10
+              ],
+              "final_modes": [
+                {
+                  "s0_mode_1_based": 34,
+                  "quanta": 1,
+                  "harmonic_frequency_cm_inverse": 1421.4805141582658,
+                  "d2h_irrep": "Ag"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "archived_77K_reduced_peaks": {
+    "condon": {
+      "losses_from_00_cm_inverse": [
+        1427.2725329455025,
+        1627.2725329455025
+      ],
+      "split_cm_inverse": 200.0,
+      "peak_heights_vs_pair_max": [
+        0.9380318716443881,
+        1.0
+      ],
+      "valley_loss_from_00_cm_inverse": 1523.2725329455025,
+      "valley_height_fraction_of_pair_max": 0.5921617332809754
+    },
+    "ht": {
+      "losses_from_00_cm_inverse": [
+        1427.2725329455025,
+        1635.2725329455025
+      ],
+      "split_cm_inverse": 208.0,
+      "peak_heights_vs_pair_max": [
+        0.8431795979380001,
+        1.0
+      ],
+      "valley_loss_from_00_cm_inverse": 1523.2725329455025,
+      "valley_height_fraction_of_pair_max": 0.5647592929164961
+    }
+  },
+  "four_quantum_sensitivity": {
+    "positive_photon_stick_count": 270725,
+    "stick_dipole_strength_coverage": {
+      "condon": 0.798617420468244,
+      "condon_plus_linear_ht": 0.7745413547799146
+    },
+    "reconstructed_peaks": {
+      "condon": {
+        "split_cm_inverse": 201.75,
+        "valley_loss_from_00_cm_inverse": 1525.25,
+        "valley_height_fraction_of_pair_max": 0.5850808166253747,
+        "peaks": [
+          {
+            "loss_from_00_cm_inverse": 1427.0,
+            "absolute_photon_energy_eV": 2.3775547591890835,
+            "relative_peak_height_vs_pair_max": 0.9387492060317364,
+            "contribution_fractions_by_total_quanta": {
+              "0": 1.1139092056258916e-109,
+              "1": 0.9856680851916394,
+              "2": 0.00572147581529389,
+              "3": 0.008287780873048428,
+              "4": 0.00032265812001855827
+            },
+            "full_ht_profile_height_fractions_order_fc_ht_squared_interference": [
+              1.0260602237224883,
+              0.020649083610700815,
+              -0.04670930733318897
+            ],
+            "dominant_sticks": [
+              {
+                "stick_loss_cm_inverse": 1421.4805141582651,
+                "contribution_fraction_of_peak_height": 0.9254327662310968,
+                "dipole_strength_au2_order_fc_ht_squared_interference_total": [
+                  2.946307020769392e-10,
+                  1.466923022864192e-13,
+                  -1.3118363733321216e-11,
+                  2.816590306459044e-10
+                ],
+                "final_modes": [
+                  {
+                    "s0_mode_1_based": 34,
+                    "quanta": 1,
+                    "harmonic_frequency_cm_inverse": 1421.4805141582658,
+                    "d2h_irrep": "Ag"
+                  }
+                ]
+              },
+              {
+                "stick_loss_cm_inverse": 1486.1669629543371,
+                "contribution_fraction_of_peak_height": 0.053760182052285325,
+                "dipole_strength_au2_order_fc_ht_squared_interference_total": [
+                  2.6248838380603e-11,
+                  5.33370460313949e-14,
+                  -2.34056799983509e-12,
+                  2.3961607426799305e-11
+                ],
+                "final_modes": [
+                  {
+                    "s0_mode_1_based": 35,
+                    "quanta": 1,
+                    "harmonic_frequency_cm_inverse": 1486.1669629543358,
+                    "d2h_irrep": "Ag"
+                  }
+                ]
+              },
+              {
+                "stick_loss_cm_inverse": 1628.6723778805497,
+                "contribution_fraction_of_peak_height": 0.006427349708115572,
+                "dipole_strength_au2_order_fc_ht_squared_interference_total": [
+                  3.06155457772999e-10,
+                  7.737289621076591e-14,
+                  9.607240927259235e-12,
+                  3.15840071596469e-10
+                ],
+                "final_modes": [
+                  {
+                    "s0_mode_1_based": 38,
+                    "quanta": 1,
+                    "harmonic_frequency_cm_inverse": 1628.672377880551,
+                    "d2h_irrep": "Ag"
+                  }
+                ]
+              },
+              {
+                "stick_loss_cm_inverse": 1556.4420665074397,
+                "contribution_fraction_of_peak_height": 0.004913688232727478,
+                "dipole_strength_au2_order_fc_ht_squared_interference_total": [
+                  1.2285467270746655e-11,
+                  4.394518181098732e-15,
+                  4.3168692107799264e-13,
+                  1.2721548710005746e-11
+                ],
+                "final_modes": [
+                  {
+                    "s0_mode_1_based": 8,
+                    "quanta": 3,
+                    "harmonic_frequency_cm_inverse": 518.8140221691463,
+                    "d2h_irrep": "Ag"
+                  }
+                ]
+              },
+              {
+                "stick_loss_cm_inverse": 1321.0613924999784,
+                "contribution_fraction_of_peak_height": 0.0015177713027926909,
+                "dipole_strength_au2_order_fc_ht_squared_interference_total": [
+                  1.9192145919835823e-12,
+                  6.615994240874692e-17,
+                  2.1402790002128784e-14,
+                  1.9406835419281197e-12
+                ],
+                "final_modes": [
+                  {
+                    "s0_mode_1_based": 4,
+                    "quanta": 2,
+                    "harmonic_frequency_cm_inverse": 401.1236851654153,
+                    "d2h_irrep": "B2g"
+                  },
+                  {
+                    "s0_mode_1_based": 8,
+                    "quanta": 1,
+                    "harmonic_frequency_cm_inverse": 518.8140221691463,
+                    "d2h_irrep": "Ag"
+                  }
+                ]
+              },
+              {
+                "stick_loss_cm_inverse": 1497.1221282258537,
+                "contribution_fraction_of_peak_height": 0.0014123246268178307,
+                "dipole_strength_au2_order_fc_ht_squared_interference_total": [
+                  8.210766288117481e-13,
+                  1.1498053679047401e-18,
+                  -1.27132377533316e-15,
+                  8.198064548417829e-13
+                ],
+                "final_modes": [
+                  {
+                    "s0_mode_1_based": 6,
+                    "quanta": 1,
+                    "harmonic_frequency_cm_inverse": 497.48601980140234,
+                    "d2h_irrep": "B1u"
+                  },
+                  {
+                    "s0_mode_1_based": 20,
+                    "quanta": 1,
+                    "harmonic_frequency_cm_inverse": 999.6361084244513,
+                    "d2h_irrep": "B1u"
+                  }
+                ]
+              },
+              {
+                "stick_loss_cm_inverse": 1507.9041315929157,
+                "contribution_fraction_of_peak_height": 0.0013991429147998695,
+                "dipole_strength_au2_order_fc_ht_squared_interference_total": [
+                  9.941583721889583e-13,
+                  1.39218264505338e-18,
+                  -1.539316953692375e-15,
+                  9.92620447417911e-13
+                ],
+                "final_modes": [
+                  {
+                    "s0_mode_1_based": 10,
+                    "quanta": 1,
+                    "harmonic_frequency_cm_inverse": 646.0452544632777,
+                    "d2h_irrep": "Au"
+                  },
+                  {
+                    "s0_mode_1_based": 16,
+                    "quanta": 1,
+                    "harmonic_frequency_cm_inverse": 861.8588771296365,
+                    "d2h_irrep": "Au"
+                  }
+                ]
+              },
+              {
+                "stick_loss_cm_inverse": 1513.7860617719518,
+                "contribution_fraction_of_peak_height": 0.001044626346261409,
+                "dipole_strength_au2_order_fc_ht_squared_interference_total": [
+                  8.381851999263736e-13,
+                  2.8894259551080604e-17,
+                  9.347314204387971e-15,
+                  8.475614083903126e-13
+                ],
+                "final_modes": [
+                  {
+                    "s0_mode_1_based": 6,
+                    "quanta": 2,
+                    "harmonic_frequency_cm_inverse": 497.48601980140234,
+                    "d2h_irrep": "B1u"
+                  },
+                  {
+                    "s0_mode_1_based": 8,
+                    "quanta": 1,
+                    "harmonic_frequency_cm_inverse": 518.8140221691463,
+                    "d2h_irrep": "Ag"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "loss_from_00_cm_inverse": 1628.75,
+            "absolute_photon_energy_eV": 2.3525409473629164,
+            "relative_peak_height_vs_pair_max": 1.0,
+            "contribution_fractions_by_total_quanta": {
+              "0": 1.0632669074456146e-142,
+              "1": 0.9168494345936141,
+              "2": 0.060346646879915554,
+              "3": 0.022449884479362706,
+              "4": 0.00035403404710749665
+            },
+            "full_ht_profile_height_fractions_order_fc_ht_squared_interference": [
+              0.9226655010701156,
+              0.04810468779463572,
+              0.029229811135249913
+            ],
+            "dominant_sticks": [
+              {
+                "stick_loss_cm_inverse": 1628.6723778805497,
+                "contribution_fraction_of_peak_height": 0.9061258109669873,
+                "dipole_strength_au2_order_fc_ht_squared_interference_total": [
+                  3.06155457772999e-10,
+                  7.737289621076591e-14,
+                  9.607240927259235e-12,
+                  3.15840071596469e-10
+                ],
+                "final_modes": [
+                  {
+                    "s0_mode_1_based": 38,
+                    "quanta": 1,
+                    "harmonic_frequency_cm_inverse": 1628.672377880551,
+                    "d2h_irrep": "Ag"
+                  }
+                ]
+              },
+              {
+                "stick_loss_cm_inverse": 1689.6229720082802,
+                "contribution_fraction_of_peak_height": 0.054580701567768626,
+                "dipole_strength_au2_order_fc_ht_squared_interference_total": [
+                  2.9113772205780684e-11,
+                  2.9944715600463534e-14,
+                  1.7410697675986888e-12,
+                  3.0884786688979836e-11
+                ],
+                "final_modes": [
+                  {
+                    "s0_mode_1_based": 8,
+                    "quanta": 1,
+                    "harmonic_frequency_cm_inverse": 518.8140221691463,
+                    "d2h_irrep": "Ag"
+                  },
+                  {
+                    "s0_mode_1_based": 28,
+                    "quanta": 1,
+                    "harmonic_frequency_cm_inverse": 1170.8089498391334,
+                    "d2h_irrep": "Ag"
+                  }
+                ]
+              },
+              {
+                "stick_loss_cm_inverse": 1556.4420665074397,
+                "contribution_fraction_of_peak_height": 0.019091107797013052,
+                "dipole_strength_au2_order_fc_ht_squared_interference_total": [
+                  1.2285467270746655e-11,
+                  4.394518181098732e-15,
+                  4.3168692107799264e-13,
+                  1.2721548710005746e-11
+                ],
+                "final_modes": [
+                  {
+                    "s0_mode_1_based": 8,
+                    "quanta": 3,
+                    "harmonic_frequency_cm_inverse": 518.8140221691463,
+                    "d2h_irrep": "Ag"
+                  }
+                ]
+              },
+              {
+                "stick_loss_cm_inverse": 1486.1669629543371,
+                "contribution_fraction_of_peak_height": 0.006344125373187987,
+                "dipole_strength_au2_order_fc_ht_squared_interference_total": [
+                  2.6248838380603e-11,
+                  5.33370460313949e-14,
+                  -2.34056799983509e-12,
+                  2.3961607426799305e-11
+                ],
+                "final_modes": [
+                  {
+                    "s0_mode_1_based": 35,
+                    "quanta": 1,
+                    "harmonic_frequency_cm_inverse": 1486.1669629543358,
+                    "d2h_irrep": "Ag"
+                  }
+                ]
+              },
+              {
+                "stick_loss_cm_inverse": 1421.4805141582651,
+                "contribution_fraction_of_peak_height": 0.004379496268672711,
+                "dipole_strength_au2_order_fc_ht_squared_interference_total": [
+                  2.946307020769392e-10,
+                  1.466923022864192e-13,
+                  -1.3118363733321216e-11,
+                  2.816590306459044e-10
+                ],
+                "final_modes": [
+                  {
+                    "s0_mode_1_based": 34,
+                    "quanta": 1,
+                    "harmonic_frequency_cm_inverse": 1421.4805141582658,
+                    "d2h_irrep": "Ag"
+                  }
+                ]
+              },
+              {
+                "stick_loss_cm_inverse": 1617.914368383804,
+                "contribution_fraction_of_peak_height": 0.002529105292462509,
+                "dipole_strength_au2_order_fc_ht_squared_interference_total": [
+                  8.669688764751465e-13,
+                  1.2140711755736315e-18,
+                  -1.3423815834726582e-15,
+                  8.656277089628495e-13
+                ],
+                "final_modes": [
+                  {
+                    "s0_mode_1_based": 15,
+                    "quanta": 2,
+                    "harmonic_frequency_cm_inverse": 808.9571841919026,
+                    "d2h_irrep": "B1u"
+                  }
+                ]
+              },
+              {
+                "stick_loss_cm_inverse": 1658.9131962328795,
+                "contribution_fraction_of_peak_height": 0.002275370683894371,
+                "dipole_strength_au2_order_fc_ht_squared_interference_total": [
+                  8.599943259046492e-13,
+                  2.964607257122832e-17,
+                  9.590526269048831e-15,
+                  8.696144982462692e-13
+                ],
+                "final_modes": [
+                  {
+                    "s0_mode_1_based": 4,
+                    "quanta": 1,
+                    "harmonic_frequency_cm_inverse": 401.1236851654153,
+                    "d2h_irrep": "B2g"
+                  },
+                  {
+                    "s0_mode_1_based": 8,
+                    "quanta": 1,
+                    "harmonic_frequency_cm_inverse": 518.8140221691463,
+                    "d2h_irrep": "Ag"
+                  },
+                  {
+                    "s0_mode_1_based": 11,
+                    "quanta": 1,
+                    "harmonic_frequency_cm_inverse": 738.975488898317,
+                    "d2h_irrep": "B2g"
+                  }
+                ]
+              },
+              {
+                "stick_loss_cm_inverse": 1616.3592753958499,
+                "contribution_fraction_of_peak_height": 0.0010860862278558013,
+                "dipole_strength_au2_order_fc_ht_squared_interference_total": [
+                  3.7396750879725443e-13,
+                  5.236902792609457e-19,
+                  -5.790370453291865e-16,
+                  3.733889954422045e-13
+                ],
+                "final_modes": [
+                  {
+                    "s0_mode_1_based": 14,
+                    "quanta": 2,
+                    "harmonic_frequency_cm_inverse": 808.1796376979249,
+                    "d2h_irrep": "B3g"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "condon_plus_linear_ht": {
+        "split_cm_inverse": 203.5,
+        "valley_loss_from_00_cm_inverse": 1522.0,
+        "valley_height_fraction_of_pair_max": 0.5590207259436707,
+        "peaks": [
+          {
+            "loss_from_00_cm_inverse": 1427.75,
+            "absolute_photon_energy_eV": 2.377461771041031,
+            "relative_peak_height_vs_pair_max": 0.8437250854828114,
+            "contribution_fractions_by_total_quanta": {
+              "0": 8.764853696947503e-110,
+              "1": 0.964839012583778,
+              "2": 0.02132426005198196,
+              "3": 0.013489369196756475,
+              "4": 0.0003473581674839674
+            },
+            "full_ht_profile_height_fractions_order_fc_ht_squared_interference": [
+              1.0259410575443333,
+              0.02076268130872056,
+              -0.04670373885305288
+            ],
+            "dominant_sticks": [
+              {
+                "stick_loss_cm_inverse": 1421.4805141582651,
+                "contribution_fraction_of_peak_height": 0.9067063554906701,
+                "dipole_strength_au2_order_fc_ht_squared_interference_total": [
+                  2.946307020769392e-10,
+                  1.466923022864192e-13,
+                  -1.3118363733321216e-11,
+                  2.816590306459044e-10
+                ],
+                "final_modes": [
+                  {
+                    "s0_mode_1_based": 34,
+                    "quanta": 1,
+                    "harmonic_frequency_cm_inverse": 1421.4805141582658,
+                    "d2h_irrep": "Ag"
+                  }
+                ]
+              },
+              {
+                "stick_loss_cm_inverse": 1486.1669629543371,
+                "contribution_fraction_of_peak_height": 0.050902062703743624,
+                "dipole_strength_au2_order_fc_ht_squared_interference_total": [
+                  2.6248838380603e-11,
+                  5.33370460313949e-14,
+                  -2.34056799983509e-12,
+                  2.3961607426799305e-11
+                ],
+                "final_modes": [
+                  {
+                    "s0_mode_1_based": 35,
+                    "quanta": 1,
+                    "harmonic_frequency_cm_inverse": 1486.1669629543358,
+                    "d2h_irrep": "Ag"
+                  }
+                ]
+              },
+              {
+                "stick_loss_cm_inverse": 1628.6723778805497,
+                "contribution_fraction_of_peak_height": 0.007060988746509679,
+                "dipole_strength_au2_order_fc_ht_squared_interference_total": [
+                  3.06155457772999e-10,
+                  7.737289621076591e-14,
+                  9.607240927259235e-12,
+                  3.15840071596469e-10
+                ],
+                "final_modes": [
+                  {
+                    "s0_mode_1_based": 38,
+                    "quanta": 1,
+                    "harmonic_frequency_cm_inverse": 1628.672377880551,
+                    "d2h_irrep": "Ag"
+                  }
+                ]
+              },
+              {
+                "stick_loss_cm_inverse": 1498.0965559032181,
+                "contribution_fraction_of_peak_height": 0.0053638010966977345,
+                "dipole_strength_au2_order_fc_ht_squared_interference_total": [
+                  2.3903275605481188e-42,
+                  3.0511225135362843e-12,
+                  0.0,
+                  3.0511225135362843e-12
+                ],
+                "final_modes": [
+                  {
+                    "s0_mode_1_based": 8,
+                    "quanta": 1,
+                    "harmonic_frequency_cm_inverse": 518.8140221691463,
+                    "d2h_irrep": "Ag"
+                  },
+                  {
+                    "s0_mode_1_based": 19,
+                    "quanta": 1,
+                    "harmonic_frequency_cm_inverse": 979.2825337340726,
+                    "d2h_irrep": "B2g"
+                  }
+                ]
+              },
+              {
+                "stick_loss_cm_inverse": 1556.4420665074397,
+                "contribution_fraction_of_peak_height": 0.005346456097451946,
+                "dipole_strength_au2_order_fc_ht_squared_interference_total": [
+                  1.2285467270746655e-11,
+                  4.394518181098732e-15,
+                  4.3168692107799264e-13,
+                  1.2721548710005746e-11
+                ],
+                "final_modes": [
+                  {
+                    "s0_mode_1_based": 8,
+                    "quanta": 3,
+                    "harmonic_frequency_cm_inverse": 518.8140221691463,
+                    "d2h_irrep": "Ag"
+                  }
+                ]
+              },
+              {
+                "stick_loss_cm_inverse": 1441.7352049571066,
+                "contribution_fraction_of_peak_height": 0.005228194893679539,
+                "dipole_strength_au2_order_fc_ht_squared_interference_total": [
+                  3.1324086965785737e-38,
+                  1.6556644061066849e-12,
+                  4.585226067237539e-37,
+                  1.6556644061066849e-12
+                ],
+                "final_modes": [
+                  {
+                    "s0_mode_1_based": 8,
+                    "quanta": 1,
+                    "harmonic_frequency_cm_inverse": 518.8140221691463,
+                    "d2h_irrep": "Ag"
+                  },
+                  {
+                    "s0_mode_1_based": 17,
+                    "quanta": 1,
+                    "harmonic_frequency_cm_inverse": 922.9211827879615,
+                    "d2h_irrep": "B3g"
+                  }
+                ]
+              },
+              {
+                "stick_loss_cm_inverse": 1438.751729503709,
+                "contribution_fraction_of_peak_height": 0.004030531569947815,
+                "dipole_strength_au2_order_fc_ht_squared_interference_total": [
+                  7.146490704720289e-39,
+                  1.2647169296894724e-12,
+                  0.0,
+                  1.2647169296894724e-12
+                ],
+                "final_modes": [
+                  {
+                    "s0_mode_1_based": 4,
+                    "quanta": 1,
+                    "harmonic_frequency_cm_inverse": 401.1236851654153,
+                    "d2h_irrep": "B2g"
+                  },
+                  {
+                    "s0_mode_1_based": 8,
+                    "quanta": 2,
+                    "harmonic_frequency_cm_inverse": 518.8140221691463,
+                    "d2h_irrep": "Ag"
+                  }
+                ]
+              },
+              {
+                "stick_loss_cm_inverse": 1544.7146637778346,
+                "contribution_fraction_of_peak_height": 0.0021175514255469766,
+                "dipole_strength_au2_order_fc_ht_squared_interference_total": [
+                  1.1623895615806435e-37,
+                  3.5329020691684417e-12,
+                  -4.753567971889333e-37,
+                  3.5329020691684417e-12
+                ],
+                "final_modes": [
+                  {
+                    "s0_mode_1_based": 8,
+                    "quanta": 1,
+                    "harmonic_frequency_cm_inverse": 518.8140221691463,
+                    "d2h_irrep": "Ag"
+                  },
+                  {
+                    "s0_mode_1_based": 22,
+                    "quanta": 1,
+                    "harmonic_frequency_cm_inverse": 1025.9006416086875,
+                    "d2h_irrep": "B3g"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "loss_from_00_cm_inverse": 1631.25,
+            "absolute_photon_energy_eV": 2.3522309868694076,
+            "relative_peak_height_vs_pair_max": 1.0,
+            "contribution_fractions_by_total_quanta": {
+              "0": 3.586010767086653e-143,
+              "1": 0.9049101638229681,
+              "2": 0.07310342283805749,
+              "3": 0.02148852973601137,
+              "4": 0.0004978836029637504
+            },
+            "full_ht_profile_height_fractions_order_fc_ht_squared_interference": [
+              0.9215433241897938,
+              0.049114690484321634,
+              0.029341985325885125
+            ],
+            "dominant_sticks": [
+              {
+                "stick_loss_cm_inverse": 1628.6723778805497,
+                "contribution_fraction_of_peak_height": 0.8613093103334215,
+                "dipole_strength_au2_order_fc_ht_squared_interference_total": [
+                  3.06155457772999e-10,
+                  7.737289621076591e-14,
+                  9.607240927259235e-12,
+                  3.15840071596469e-10
+                ],
+                "final_modes": [
+                  {
+                    "s0_mode_1_based": 38,
+                    "quanta": 1,
+                    "harmonic_frequency_cm_inverse": 1628.672377880551,
+                    "d2h_irrep": "Ag"
+                  }
+                ]
+              },
+              {
+                "stick_loss_cm_inverse": 1689.6229720082802,
+                "contribution_fraction_of_peak_height": 0.05539109520327628,
+                "dipole_strength_au2_order_fc_ht_squared_interference_total": [
+                  2.9113772205780684e-11,
+                  2.9944715600463534e-14,
+                  1.7410697675986888e-12,
+                  3.0884786688979836e-11
+                ],
+                "final_modes": [
+                  {
+                    "s0_mode_1_based": 8,
+                    "quanta": 1,
+                    "harmonic_frequency_cm_inverse": 518.8140221691463,
+                    "d2h_irrep": "Ag"
+                  },
+                  {
+                    "s0_mode_1_based": 28,
+                    "quanta": 1,
+                    "harmonic_frequency_cm_inverse": 1170.8089498391334,
+                    "d2h_irrep": "Ag"
+                  }
+                ]
+              },
+              {
+                "stick_loss_cm_inverse": 1687.1698466521639,
+                "contribution_fraction_of_peak_height": 0.035310943466707274,
+                "dipole_strength_au2_order_fc_ht_squared_interference_total": [
+                  1.335190642791473e-22,
+                  1.9019947919619986e-11,
+                  2.318216691492642e-24,
+                  1.901994791975582e-11
+                ],
+                "final_modes": [
+                  {
+                    "s0_mode_1_based": 40,
+                    "quanta": 1,
+                    "harmonic_frequency_cm_inverse": 1687.1698466521625,
+                    "d2h_irrep": "B1g"
+                  }
+                ]
+              },
+              {
+                "stick_loss_cm_inverse": 1556.4420665074397,
+                "contribution_fraction_of_peak_height": 0.01742197176613874,
+                "dipole_strength_au2_order_fc_ht_squared_interference_total": [
+                  1.2285467270746655e-11,
+                  4.394518181098732e-15,
+                  4.3168692107799264e-13,
+                  1.2721548710005746e-11
+                ],
+                "final_modes": [
+                  {
+                    "s0_mode_1_based": 8,
+                    "quanta": 3,
+                    "harmonic_frequency_cm_inverse": 518.8140221691463,
+                    "d2h_irrep": "Ag"
+                  }
+                ]
+              },
+              {
+                "stick_loss_cm_inverse": 1486.1669629543371,
+                "contribution_fraction_of_peak_height": 0.004887548933339263,
+                "dipole_strength_au2_order_fc_ht_squared_interference_total": [
+                  2.6248838380603e-11,
+                  5.33370460313949e-14,
+                  -2.34056799983509e-12,
+                  2.3961607426799305e-11
+                ],
+                "final_modes": [
+                  {
+                    "s0_mode_1_based": 35,
+                    "quanta": 1,
+                    "harmonic_frequency_cm_inverse": 1486.1669629543358,
+                    "d2h_irrep": "Ag"
+                  }
+                ]
+              },
+              {
+                "stick_loss_cm_inverse": 1679.963062573644,
+                "contribution_fraction_of_peak_height": 0.004556125442574031,
+                "dipole_strength_au2_order_fc_ht_squared_interference_total": [
+                  3.976102180577697e-22,
+                  2.2363547801030414e-12,
+                  1.3105650752935521e-23,
+                  2.236354780513757e-12
+                ],
+                "final_modes": [
+                  {
+                    "s0_mode_1_based": 8,
+                    "quanta": 1,
+                    "harmonic_frequency_cm_inverse": 518.8140221691463,
+                    "d2h_irrep": "Ag"
+                  },
+                  {
+                    "s0_mode_1_based": 26,
+                    "quanta": 1,
+                    "harmonic_frequency_cm_inverse": 1161.1490404044985,
+                    "d2h_irrep": "B1g"
+                  }
+                ]
+              },
+              {
+                "stick_loss_cm_inverse": 1544.7146637778346,
+                "contribution_fraction_of_peak_height": 0.0038320260215610517,
+                "dipole_strength_au2_order_fc_ht_squared_interference_total": [
+                  1.1623895615806435e-37,
+                  3.5329020691684417e-12,
+                  -4.753567971889333e-37,
+                  3.5329020691684417e-12
+                ],
+                "final_modes": [
+                  {
+                    "s0_mode_1_based": 8,
+                    "quanta": 1,
+                    "harmonic_frequency_cm_inverse": 518.8140221691463,
+                    "d2h_irrep": "Ag"
+                  },
+                  {
+                    "s0_mode_1_based": 22,
+                    "quanta": 1,
+                    "harmonic_frequency_cm_inverse": 1025.9006416086875,
+                    "d2h_irrep": "B3g"
+                  }
+                ]
+              },
+              {
+                "stick_loss_cm_inverse": 1421.4805141582651,
+                "contribution_fraction_of_peak_height": 0.0033952706445496855,
+                "dipole_strength_au2_order_fc_ht_squared_interference_total": [
+                  2.946307020769392e-10,
+                  1.466923022864192e-13,
+                  -1.3118363733321216e-11,
+                  2.816590306459044e-10
+                ],
+                "final_modes": [
+                  {
+                    "s0_mode_1_based": 34,
+                    "quanta": 1,
+                    "harmonic_frequency_cm_inverse": 1421.4805141582658,
+                    "d2h_irrep": "Ag"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    }
+  }
+}

@@ -110,6 +110,29 @@ slopes = response.dipole_derivatives_au      # mode, spin component, dipole axis
 
 The Cartesian axes are those of the emitting geometry in the supplied TDA object. For equal spin populations, an all-quanta harmonic profile for one polarization uses `moments[:, axis] / sqrt(3)` and `slopes[:, :, axis] / sqrt(3)` as the three independent amplitudes. Use the inverse Duschinsky transform for emission and sum the three photon-weighted polarization profiles to obtain the isotropic rate.
 
+```python
+from math import sqrt
+
+profiles = [
+    esd.thermal_harmonic_spectrum(
+        ah_parameters.excited_frequencies_hartree,
+        ah_parameters.ground_frequencies_hartree,
+        gap_00_hartree=-ah_parameters.gap_00_hartree,
+        rotation=ah_parameters.rotation.T,
+        shift_au=-(ah_parameters.rotation.T @ ah_parameters.shift_au),
+        transition_dipole_au=moments[:, axis] / sqrt(3),
+        dipole_derivatives_au=slopes[:, :, axis] / sqrt(3),
+        temperature_kelvin=77.0,
+        fwhm_cm_inverse=150.0,
+        process="emission",
+        include_dipole_strength_density=True,
+    )
+    for axis in range(3)
+]
+```
+
+Use each profile's `positive_photon_weighted_strength` for the rate and `dipole_strength_density_per_cm_inverse` for comparison with a reduced experimental trace. [Rate and lifetime conversion](numerical-results.md#thermal-profiles-and-prepared-rotors)
+
 ## Prepared vibronic phosphorescence
 
 Compute the electronic matrices at the emitting triplet minimum and express the moments in the same Cartesian frame as the AH model. Prepare `AdiabaticHessianParameters` for the relaxed $S_0$ and triplet surfaces with independent Hessians using `pyscf_esd.pyscf_adapter.adiabatic_hessian`. Supply the adiabatic 0–0 energy of the lowest spin sublevel in Hartree, including the vibrational zero-point difference and any adiabatic spin correction. The reported line energies use this origin plus the supplied electronic spin splittings.
@@ -171,3 +194,15 @@ The 77 K Condon rate is $2.603\times10^{-3}\ \mathrm{s}^{-1}$, equivalent to a r
 Reusing the B3LYP/def2-SVP endpoints, the first-order response over 4,964 spatial occupied–virtual configurations per spin recovers the perpendicular intensity. The Condon rate is $0.0567612\ \mathrm{s}^{-1}$, equivalent to 17.62 s, with 94.61% of the rate polarized perpendicular to the plane. Higher opposite-reflection configurations supply this intensity through both singlet and triplet mixing. Such channels have also been identified in independent analyses of aromatic phosphorescence. [Higher-state intensity borrowing](https://doi.org/10.1016/S0166-1280(02)00035-0) · [Polarization reappraisal](https://doi.org/10.1016/j.chemphys.2005.04.047)
 
 Analytic HT along all 48 triplet modes increases the rate by 13.4% to $0.0643706\ \mathrm{s}^{-1}$, corresponding to 15.54 s, with 88.49% perpendicular emission. An independent harmonic third-moment calculation agrees with the integrated positive-photon rate within $8\times10^{-9}$ relative. The comparison uses the same 0.019 eV Gaussian width and native energies. The calculated double feature near 0.2 eV below the origin remains resolved where the hydrocarbon-glass trace has a broad band. The gas-phase 0–0 energy is 2.5545 eV, and the two radiative reference estimates above describe different condensed-phase conditions.
+
+### Dielectric and linewidth controls
+
+The resolved gas-phase maxima come primarily from $T_1(v=0)$ transitions to two totally symmetric $S_0$ ring fundamentals at 1,421.48 and 1,628.67 cm⁻¹ (0.176 and 0.202 eV). The split is present in the 0 K Condon sticks. The symmetry-matched Raman fundamentals occur at 1,381 and 1,579 cm⁻¹. [Mode assignments](benchmarks/naphthalene/gas-assignments.json) · [Raman measurements](https://doi.org/10.1016/0301-0104(77)85115-X)
+
+The DF-B3LYP/def2-SVP control uses analytic gradients and Hessians at relaxed $S_0$ and $T_1$ minima in C-PCM. PySCF's methylcyclohexane settings ($\epsilon=2.024$, $\epsilon_\mathrm{opt}=2.0252$) represent the mean dielectric of the experimental 3:1 methylcyclohexane/isopentane glass. The optical solvent response enters the singlet TDA operator. The triplet response has no first-order spin-summed transition density. The SOC and dipole operators are evaluated on the solute. The change in 0–0 energy is +0.00231 eV. Both matched fundamentals move by less than 3 cm⁻¹, and the Condon maxima remain separated by 0.0248 eV at 0.0186 eV Gaussian FWHM.
+
+On the same vacuum photon prefactor, gas Condon gives 17.62 s, continuum surfaces with the gas dipole give 17.54 s, and the continuum surfaces with the continuum Condon moment give 15.84 s ($0.0631166\ \mathrm{s}^{-1}$). The continuum control omits analytic HT in solvent and the distribution of local glass sites. The 15.54 s result includes gas-phase HT. Each reference lifetime comes from a different medium than the spectral comparison.
+
+The experimental 0–0 has an apparent FWHM of about 239 cm⁻¹. Using that independently measured width as a resolution check merges the calculated gas HT peaks into a maximum at 1,595 cm⁻¹ below the origin. The experimental maximum is at 1,491 cm⁻¹ below the origin. The main comparison retains the original calculated broadening and plots loss from each curve's own 0–0 energy. [Comparison figure](benchmarks/naphthalene-phosphorescence.png) · [Experimental trace](https://pstorage-acs-6854636.s3.amazonaws.com/6569049/jp6b07709_si_001.pdf)
+
+The benchmark data package includes the [matched rates, mode overlaps and linewidth analysis](benchmarks/naphthalene/glass-diagnostic.json) and the [gas HT](benchmarks/naphthalene/gas-ht-77k.csv.gz), [gas Condon](benchmarks/naphthalene/gas-condon-77k.csv.gz), and [continuum Condon](benchmarks/naphthalene/pcm-condon-77k.csv.gz) profiles. The profiles are tabulated on native photon energy in eV with photon-rate and reduced dipole-strength densities for each Cartesian polarization.

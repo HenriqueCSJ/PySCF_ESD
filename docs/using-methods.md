@@ -18,7 +18,7 @@ In a PySCF script, use `from pyscf import esd`. The [`esd.run(mol, ...)` example
 
 Use the [numerical output guide](numerical-results.md) for radiative rates, lifetimes, oscillator strengths, mode analysis, and reading the CLI or Python results.
 
-The [unrestricted DFT and phosphorescence guide](phosphorescence.md) shows the prepared UKS derivatives, spin-conserving UKS/TDA vertical spectra, and spin–orbit AH emission APIs.
+The [unrestricted DFT and phosphorescence guide](phosphorescence.md) shows the prepared UKS derivatives, spin-conserving UKS/TDA vertical spectra, and spin–orbit AH emission APIs. Use `esd.tda_soc_response` for full-space intensity borrowing and gas-phase analytic spin-vibronic Herzberg–Teller slopes. The [77 K solvent benchmark](phosphorescence.md#dielectric-and-linewidth-controls) uses a Condon C-PCM control with the same broadening as the gas calculation.
 
 ## From a single XYZ
 

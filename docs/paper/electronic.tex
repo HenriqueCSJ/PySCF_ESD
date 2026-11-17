@@ -229,3 +229,57 @@ densities. Contracting the relaxed mixed density with the Cartesian
 position integrals gives the length-gauge dipole. This is an optical
 transition between the selected roots. The population and photon-energy
 weights enter only in the subsequent vibronic assembly.
+
+\subsection{Full-space spin--orbit response and analytic Herzberg--Teller coupling}
+\label{sec:electronic-phosphorescence}
+
+The phosphorescence model uses first-order spin--orbit coupling (SOC)
+from the molecular Breit--Pauli spin--orbit mean-field (SOMF) operator
+on an all-electron RKS reference at the emitting triplet minimum.
+\cite{somf,desouza-phosphorescence} Let $A_S$ and $A_T$ be the
+spin-adapted singlet and triplet TDA operators in the same spatial
+occupied--virtual basis. The target triplet has unit amplitude $Q$
+and excitation energy $E_T$ relative to the RKS ground state. In a
+Cartesian triplet spin basis, $h_m$ is the imaginary part of the
+spatial SOC coefficient multiplying $\sigma_m/2$, where $\sigma_m$ is
+a Pauli matrix.
+For a one-electron operator $O$, define its particle and hole action
+by $\ell_O Q=QO_{vv}^{\mathsf T}-O_{oo}^{\mathsf T}Q$. For
+Cartesian component $\xi$ of the physical electric dipole $\mu_\xi$,
+use $d_\xi=\sqrt{2}(\mu_\xi)_{ov}$, $g_m=(h_m)_{ov}/\sqrt{2}$,
+$b_m=\ell_{h_m}Q/2$, and $t_\xi=\ell_{\mu_\xi}Q$.
+With all occupied--virtual arrays flattened in the contractions,
+\begin{align}
+ B_S x_\xi &= d_\xi, & B_S &= A_S-E_T I, &
+ A_T y_\xi &= t_\xi, \\
+ M_{m\xi} &= -i\bigl(b_m^{\mathsf T}x_\xi+g_m^{\mathsf T}y_\xi\bigr).
+ \label{eq:full-space-soc}
+\end{align}
+The two amplitudes describe singlet admixture into the emitting triplet
+and triplet admixture into the ground singlet. The common permanent
+dipole cancels between the two state responses. The shifted operators
+must be positive, and the response solves span the full finite
+occupied--virtual space without explicit enumeration of its roots.
+
+For a mass-weighted triplet normal coordinate $s$, differentiating the
+response equations gives the first-order HT coefficient
+\begin{align}
+ \partial_s M_{m\xi}=-i\bigl[&
+ (\partial_s b_m)^{\mathsf T}x_\xi
+ +u_m^{\mathsf T}\bigl(\partial_s d_\xi-(\partial_s B_S)x_\xi\bigr)
+ \notag\\
+ &+(\partial_s g_m)^{\mathsf T}y_\xi
+ +v_m^{\mathsf T}\bigl(\partial_s t_\xi-(\partial_s A_T)y_\xi\bigr)
+ \bigr],
+ \label{eq:soc-ht}
+\end{align}
+where $B_S u_m=b_m$ and $A_T v_m=g_m$. The derivatives include the
+response of the SOMF and position integrals, the spin-summed density,
+the orbitals, the two TDA operators, and the isolated spatial triplet
+root.\cite{pygraso} We evaluate these terms analytically at one gas-phase
+geometry, without fitting or finite differences. The first-order SOC
+model neglects the fine-structure splittings and uses equal spin
+populations on a common triplet vibrational surface. The nuclear
+calculation adds the Condon and linear HT amplitudes coherently for each
+spin component before forming the intensity. The rate uses the vacuum
+photon prefactor and weights each positive photon energy by its cube.

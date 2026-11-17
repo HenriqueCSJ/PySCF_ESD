@@ -153,9 +153,18 @@ tails. The calculation checks the retained energies and eigenvectors or
 degenerate subspaces against larger bases and altered damping radii. The
 transition amplitudes contract both VCI eigenvectors with the harmonic
 FC and HT matrix elements. Unprobed couplings remain outside the test,
-and a verified second minimum requires a different nuclear model. The
-automatic workflow qualifies corrected spectra at 0~K. Its truncated
-anharmonic models supply only an estimated thermal partition tail.
+and a verified second minimum requires a different nuclear model.
+
+At positive temperature the automatic calculation weights transitions by
+the initial surface's Boltzmann populations. For one-mode DVR, the full
+finite-grid eigenvalue partition is checked against finer grids and a
+larger domain. The retained thermal population must remain confined below
+the sampled well walls. In VCI, initial levels are selected in energy
+order. An operator lower bound controls the Boltzmann weight omitted from
+the basis of the tapered Hamiltonian, and basis and taper changes test
+the stability of the retained populations. The workflow checks both
+initial population coverage and final dipole-strength closure before
+returning either spectrum.
 
 In the prepared formaldehyde example, the active space includes the
 reflection-odd inversion displacement between the two $S_1$ wells, the

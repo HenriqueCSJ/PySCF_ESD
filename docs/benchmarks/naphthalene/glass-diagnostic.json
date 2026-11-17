@@ -1,0 +1,453 @@
+{
+  "rates_at_77_K_vacuum_photon_prefactor": {
+    "gas": {
+      "origin_eV": 2.5544802088839567,
+      "rate_s_inverse": 0.05676117547138986,
+      "rate_xyz_s_inverse": [
+        0.003060504421248136,
+        1.7054925237732624e-19,
+        0.05370067105014172
+      ],
+      "radiative_lifetime_s": 17.617676020540557,
+      "perpendicular_rate_fraction": 0.9460810246470183,
+      "peaks": [
+        {
+          "loss_cm_inverse": 1427.2725097061998,
+          "loss_eV": 0.17695923679168057,
+          "native_eV": 2.377520972092276,
+          "peak_normalized_height": 0.9380318716443881
+        },
+        {
+          "loss_cm_inverse": 1627.2725097062016,
+          "loss_eV": 0.2017560763003612,
+          "native_eV": 2.3527241325835955,
+          "peak_normalized_height": 1.0
+        }
+      ]
+    },
+    "pcm_surfaces_only": {
+      "origin_eV": 2.5567903829920438,
+      "rate_s_inverse": 0.05701985531455342,
+      "rate_xyz_s_inverse": [
+        0.0030744521733359854,
+        1.713265029097587e-19,
+        0.053945403141217436
+      ],
+      "radiative_lifetime_s": 17.537750569226116,
+      "perpendicular_rate_fraction": 0.9460810246470184,
+      "peaks": [
+        {
+          "loss_cm_inverse": 1429.9053206116264,
+          "loss_eV": 0.1772856637390734,
+          "native_eV": 2.3795047192529704,
+          "peak_normalized_height": 0.939458548030514
+        },
+        {
+          "loss_cm_inverse": 1629.9053206116246,
+          "loss_eV": 0.20208250324775356,
+          "native_eV": 2.35470787974429,
+          "peak_normalized_height": 1.0
+        }
+      ]
+    },
+    "pcm_surfaces_and_pcm_moment": {
+      "origin_eV": 2.5567903829920438,
+      "rate_s_inverse": 0.0631165735945941,
+      "rate_xyz_s_inverse": [
+        0.0038553754111523213,
+        1.1988288891786694e-18,
+        0.059261198183441784
+      ],
+      "radiative_lifetime_s": 15.843699095947905,
+      "perpendicular_rate_fraction": 0.9389165920837862,
+      "peaks": [
+        {
+          "loss_cm_inverse": 1429.9053206116264,
+          "loss_eV": 0.1772856637390734,
+          "native_eV": 2.3795047192529704,
+          "peak_normalized_height": 0.9394585480305143
+        },
+        {
+          "loss_cm_inverse": 1629.9053206116246,
+          "loss_eV": 0.20208250324775356,
+          "native_eV": 2.35470787974429,
+          "peak_normalized_height": 1.0
+        }
+      ]
+    }
+  },
+  "gas_full_HT_rate_s_inverse": 0.06437055446025954,
+  "gas_full_HT_radiative_lifetime_s": 15.535053385587508,
+  "condon_solute_dipole_strength_ratio_pcm_over_gas": 1.1069227244861946,
+  "condon_pcm_tda_root_overlap_with_gas": 0.999996270525241,
+  "condon_pcm_tda_root_residual_hartree": 2.0346926044108225e-09,
+  "condon_pcm_soc_response_residuals": [
+    2.317815237472664e-09,
+    6.18327818343536e-10
+  ],
+  "pcm_static_optical_proxy": "PySCF methylcyclohexane defaults",
+  "matched_ground_modes": [
+    {
+      "gas_mode": 1,
+      "pcm_mode": 1,
+      "gas_cm_inverse": 176.53558929958677,
+      "pcm_cm_inverse": 176.3650741230429,
+      "absolute_mass_weighted_overlap": 0.9999999220441739
+    },
+    {
+      "gas_mode": 2,
+      "pcm_mode": 2,
+      "gas_cm_inverse": 189.45139319791258,
+      "pcm_cm_inverse": 189.45253577977817,
+      "absolute_mass_weighted_overlap": 0.9999997300744629
+    },
+    {
+      "gas_mode": 3,
+      "pcm_mode": 3,
+      "gas_cm_inverse": 366.1955780744789,
+      "pcm_cm_inverse": 366.1653199813094,
+      "absolute_mass_weighted_overlap": 0.9999998340054638
+    },
+    {
+      "gas_mode": 4,
+      "pcm_mode": 4,
+      "gas_cm_inverse": 401.1236847129709,
+      "pcm_cm_inverse": 401.5597112085606,
+      "absolute_mass_weighted_overlap": 0.9999993147755464
+    },
+    {
+      "gas_mode": 5,
+      "pcm_mode": 5,
+      "gas_cm_inverse": 489.3951421101114,
+      "pcm_cm_inverse": 489.50536165818653,
+      "absolute_mass_weighted_overlap": 0.9999992361163099
+    },
+    {
+      "gas_mode": 6,
+      "pcm_mode": 6,
+      "gas_cm_inverse": 497.4860192402668,
+      "pcm_cm_inverse": 497.6438327217649,
+      "absolute_mass_weighted_overlap": 0.9999996347468437
+    },
+    {
+      "gas_mode": 7,
+      "pcm_mode": 7,
+      "gas_cm_inverse": 517.2607027248341,
+      "pcm_cm_inverse": 516.9200181124069,
+      "absolute_mass_weighted_overlap": 0.9999996300566832
+    },
+    {
+      "gas_mode": 8,
+      "pcm_mode": 8,
+      "gas_cm_inverse": 518.814021583954,
+      "pcm_cm_inverse": 518.0198963257377,
+      "absolute_mass_weighted_overlap": 0.9999998211140718
+    },
+    {
+      "gas_mode": 9,
+      "pcm_mode": 9,
+      "gas_cm_inverse": 634.2751325466426,
+      "pcm_cm_inverse": 633.0697165890637,
+      "absolute_mass_weighted_overlap": 0.9999997046091954
+    },
+    {
+      "gas_mode": 10,
+      "pcm_mode": 10,
+      "gas_cm_inverse": 646.0452537345759,
+      "pcm_cm_inverse": 646.5889220528384,
+      "absolute_mass_weighted_overlap": 0.9999988140163888
+    },
+    {
+      "gas_mode": 11,
+      "pcm_mode": 11,
+      "gas_cm_inverse": 738.9754880647953,
+      "pcm_cm_inverse": 740.6749456509965,
+      "absolute_mass_weighted_overlap": 0.999992492468657
+    },
+    {
+      "gas_mode": 12,
+      "pcm_mode": 12,
+      "gas_cm_inverse": 775.8285078127227,
+      "pcm_cm_inverse": 774.4786542513884,
+      "absolute_mass_weighted_overlap": 0.9999984787958525
+    },
+    {
+      "gas_mode": 13,
+      "pcm_mode": 13,
+      "gas_cm_inverse": 806.0654533839671,
+      "pcm_cm_inverse": 805.0428951929949,
+      "absolute_mass_weighted_overlap": 0.999999729955515
+    },
+    {
+      "gas_mode": 14,
+      "pcm_mode": 14,
+      "gas_cm_inverse": 808.1796367863449,
+      "pcm_cm_inverse": 808.9655749620589,
+      "absolute_mass_weighted_overlap": 0.9999691478790464
+    },
+    {
+      "gas_mode": 15,
+      "pcm_mode": 15,
+      "gas_cm_inverse": 808.9571832794455,
+      "pcm_cm_inverse": 810.1889977470796,
+      "absolute_mass_weighted_overlap": 0.9999997280593682
+    },
+    {
+      "gas_mode": 16,
+      "pcm_mode": 16,
+      "gas_cm_inverse": 861.8588761575094,
+      "pcm_cm_inverse": 865.2892230912142,
+      "absolute_mass_weighted_overlap": 0.999998821674431
+    },
+    {
+      "gas_mode": 17,
+      "pcm_mode": 17,
+      "gas_cm_inverse": 922.9211817469595,
+      "pcm_cm_inverse": 924.681237596407,
+      "absolute_mass_weighted_overlap": 0.9999642921103274
+    },
+    {
+      "gas_mode": 18,
+      "pcm_mode": 18,
+      "gas_cm_inverse": 944.5011971902725,
+      "pcm_cm_inverse": 943.3685556616645,
+      "absolute_mass_weighted_overlap": 0.999999111131516
+    },
+    {
+      "gas_mode": 19,
+      "pcm_mode": 19,
+      "gas_cm_inverse": 979.2825326294983,
+      "pcm_cm_inverse": 982.9706567566228,
+      "absolute_mass_weighted_overlap": 0.9999931543010666
+    },
+    {
+      "gas_mode": 20,
+      "pcm_mode": 20,
+      "gas_cm_inverse": 999.6361072969195,
+      "pcm_cm_inverse": 1002.874577180189,
+      "absolute_mass_weighted_overlap": 0.999999820180558
+    },
+    {
+      "gas_mode": 21,
+      "pcm_mode": 21,
+      "gas_cm_inverse": 1019.7889834843966,
+      "pcm_cm_inverse": 1023.1372470771407,
+      "absolute_mass_weighted_overlap": 0.9999982552749215
+    },
+    {
+      "gas_mode": 22,
+      "pcm_mode": 22,
+      "gas_cm_inverse": 1025.9006404515308,
+      "pcm_cm_inverse": 1028.9284961109581,
+      "absolute_mass_weighted_overlap": 0.99999238484951
+    },
+    {
+      "gas_mode": 23,
+      "pcm_mode": 23,
+      "gas_cm_inverse": 1039.4564679393532,
+      "pcm_cm_inverse": 1037.3498239743683,
+      "absolute_mass_weighted_overlap": 0.9999893440692464
+    },
+    {
+      "gas_mode": 24,
+      "pcm_mode": 24,
+      "gas_cm_inverse": 1048.9297062036894,
+      "pcm_cm_inverse": 1046.617446696751,
+      "absolute_mass_weighted_overlap": 0.9999980525997746
+    },
+    {
+      "gas_mode": 25,
+      "pcm_mode": 25,
+      "gas_cm_inverse": 1143.3873634222948,
+      "pcm_cm_inverse": 1140.0411652767864,
+      "absolute_mass_weighted_overlap": 0.9999488790842035
+    },
+    {
+      "gas_mode": 26,
+      "pcm_mode": 26,
+      "gas_cm_inverse": 1161.1490390947893,
+      "pcm_cm_inverse": 1157.9091332664525,
+      "absolute_mass_weighted_overlap": 0.9999992148519129
+    },
+    {
+      "gas_mode": 27,
+      "pcm_mode": 27,
+      "gas_cm_inverse": 1161.7242252358458,
+      "pcm_cm_inverse": 1158.1143269662136,
+      "absolute_mass_weighted_overlap": 0.9995931466523029
+    },
+    {
+      "gas_mode": 28,
+      "pcm_mode": 28,
+      "gas_cm_inverse": 1170.8089485185285,
+      "pcm_cm_inverse": 1165.2755412804136,
+      "absolute_mass_weighted_overlap": 0.9999959851338758
+    },
+    {
+      "gas_mode": 29,
+      "pcm_mode": 29,
+      "gas_cm_inverse": 1233.6954257042303,
+      "pcm_cm_inverse": 1230.9975908864556,
+      "absolute_mass_weighted_overlap": 0.9995951375729759
+    },
+    {
+      "gas_mode": 30,
+      "pcm_mode": 30,
+      "gas_cm_inverse": 1262.0215921685428,
+      "pcm_cm_inverse": 1261.479430037986,
+      "absolute_mass_weighted_overlap": 0.999998325582171
+    },
+    {
+      "gas_mode": 31,
+      "pcm_mode": 31,
+      "gas_cm_inverse": 1278.8487129473033,
+      "pcm_cm_inverse": 1276.9300692702084,
+      "absolute_mass_weighted_overlap": 0.9999462365386457
+    },
+    {
+      "gas_mode": 32,
+      "pcm_mode": 32,
+      "gas_cm_inverse": 1408.7211943803825,
+      "pcm_cm_inverse": 1406.104867926148,
+      "absolute_mass_weighted_overlap": 0.9999649135120475
+    },
+    {
+      "gas_mode": 33,
+      "pcm_mode": 33,
+      "gas_cm_inverse": 1409.0601986838644,
+      "pcm_cm_inverse": 1407.1142183378522,
+      "absolute_mass_weighted_overlap": 0.9999956507913464
+    },
+    {
+      "gas_mode": 34,
+      "pcm_mode": 34,
+      "gas_cm_inverse": 1421.4805125549176,
+      "pcm_cm_inverse": 1419.769147152701,
+      "absolute_mass_weighted_overlap": 0.9999954991591615
+    },
+    {
+      "gas_mode": 35,
+      "pcm_mode": 35,
+      "gas_cm_inverse": 1486.1669612780252,
+      "pcm_cm_inverse": 1483.2135650839766,
+      "absolute_mass_weighted_overlap": 0.9999934553305307
+    },
+    {
+      "gas_mode": 36,
+      "pcm_mode": 36,
+      "gas_cm_inverse": 1491.644602497796,
+      "pcm_cm_inverse": 1489.3913614765088,
+      "absolute_mass_weighted_overlap": 0.999996788282626
+    },
+    {
+      "gas_mode": 37,
+      "pcm_mode": 37,
+      "gas_cm_inverse": 1557.5508021872752,
+      "pcm_cm_inverse": 1554.8694286331188,
+      "absolute_mass_weighted_overlap": 0.9999913515062813
+    },
+    {
+      "gas_mode": 38,
+      "pcm_mode": 38,
+      "gas_cm_inverse": 1628.6723760435025,
+      "pcm_cm_inverse": 1625.8301939710966,
+      "absolute_mass_weighted_overlap": 0.9999922459445884
+    },
+    {
+      "gas_mode": 39,
+      "pcm_mode": 39,
+      "gas_cm_inverse": 1652.2922999069494,
+      "pcm_cm_inverse": 1649.2146390806083,
+      "absolute_mass_weighted_overlap": 0.9999989421130404
+    },
+    {
+      "gas_mode": 40,
+      "pcm_mode": 40,
+      "gas_cm_inverse": 1687.169844749132,
+      "pcm_cm_inverse": 1684.2777337193631,
+      "absolute_mass_weighted_overlap": 0.9999981149460219
+    },
+    {
+      "gas_mode": 41,
+      "pcm_mode": 41,
+      "gas_cm_inverse": 3166.4712274242074,
+      "pcm_cm_inverse": 3168.31201879044,
+      "absolute_mass_weighted_overlap": 0.9997682380661731
+    },
+    {
+      "gas_mode": 42,
+      "pcm_mode": 42,
+      "gas_cm_inverse": 3167.9759036545456,
+      "pcm_cm_inverse": 3169.4412891855245,
+      "absolute_mass_weighted_overlap": 0.9999771531274346
+    },
+    {
+      "gas_mode": 43,
+      "pcm_mode": 43,
+      "gas_cm_inverse": 3170.7367414263435,
+      "pcm_cm_inverse": 3172.5158512500348,
+      "absolute_mass_weighted_overlap": 0.9999331309858762
+    },
+    {
+      "gas_mode": 44,
+      "pcm_mode": 44,
+      "gas_cm_inverse": 3173.63690202631,
+      "pcm_cm_inverse": 3174.761095429665,
+      "absolute_mass_weighted_overlap": 0.9999537790589634
+    },
+    {
+      "gas_mode": 45,
+      "pcm_mode": 45,
+      "gas_cm_inverse": 3183.601055445411,
+      "pcm_cm_inverse": 3184.380496337999,
+      "absolute_mass_weighted_overlap": 0.9997660582977027
+    },
+    {
+      "gas_mode": 46,
+      "pcm_mode": 46,
+      "gas_cm_inverse": 3184.848426735942,
+      "pcm_cm_inverse": 3185.360146170054,
+      "absolute_mass_weighted_overlap": 0.9999751192959889
+    },
+    {
+      "gas_mode": 47,
+      "pcm_mode": 47,
+      "gas_cm_inverse": 3195.0014597125078,
+      "pcm_cm_inverse": 3195.133497557789,
+      "absolute_mass_weighted_overlap": 0.9999330739094332
+    },
+    {
+      "gas_mode": 48,
+      "pcm_mode": 48,
+      "gas_cm_inverse": 3195.903409652154,
+      "pcm_cm_inverse": 3196.030906115265,
+      "absolute_mass_weighted_overlap": 0.9999540965462309
+    }
+  ],
+  "experiment_digitized_apparent_widths": {
+    "origin_cm_inverse": 21351.515151515152,
+    "broad_band_loss_cm_inverse": 1490.9090909090883,
+    "origin_half_maximum_width_cm_inverse": 239.08488022488382,
+    "origin_half_prominence_width_cm_inverse": 229.7921071176861,
+    "band_half_prominence_width_cm_inverse": 448.386833292494
+  },
+  "independent_origin_width_check": {
+    "effective_gaussian_fwhm_cm_inverse": 239.08488022488382,
+    "peaks": [
+      {
+        "loss_cm_inverse": 1595.272531146129,
+        "loss_eV": 0.19778858463718452,
+        "native_eV": 2.356691624246772,
+        "peak_normalized_height": 1.0
+      }
+    ],
+    "width_source": "Digitized isolated experimental 0\u20130 peak at half maximum",
+    "scope": "Resolution diagnostic only. The 77 K gas and PCM model curves retain 150 cm^-1."
+  },
+  "separate_real_cavity_photonic_sensitivity": {
+    "proxy_n": 1.4231,
+    "rate_multiplier": 2.059507456478326,
+    "pcm_condon_lifetime_s": 7.692955442385233,
+    "gas_ht_lifetime_s": 7.543091595381655
+  }
+}
