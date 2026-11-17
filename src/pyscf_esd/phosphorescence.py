@@ -1,4 +1,4 @@
-"""Electronic phosphorescence from a prepared spin–orbit state interaction."""
+"""Electronic and vibronic phosphorescence from prepared spin–orbit matrices."""
 
 from dataclasses import dataclass
 from math import isfinite
@@ -7,8 +7,11 @@ from numbers import Integral, Real
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
-from .harmonic import _KB_HARTREE_PER_K, _real_array
-from .spectral_properties import _EINSTEIN_A_FACTOR, _lifetime_s
+from .harmonic import HarmonicSpectrum, _KB_HARTREE_PER_K, _real_array, harmonic_spectrum
+from .pyscf_adapter import AdiabaticHessianParameters
+from .spectral_properties import _EINSTEIN_A_FACTOR, _lifetime_s, summarize_spectral_properties
+from .vibronic_properties import condon_ht_properties
+from .workflow import DEFAULT_MAX_QUANTA, WorkflowIncomplete, _adaptive_spectrum, _validate_spectral_options
 
 
 @dataclass(frozen=True)
@@ -37,6 +40,7 @@ class PhosphorescenceResult:
     sublevel_populations: NDArray[np.float64] | None
     vacuum_radiative_rate_s_inverse: float | None
     vacuum_radiative_lifetime_s: float | None
+    degeneracy_tolerance_hartree: float = 1e-10
 
 
 def _hermitian(array: ArrayLike, shape: tuple[int, ...], name: str) -> NDArray[np.complex128]:
@@ -47,6 +51,16 @@ def _hermitian(array: ArrayLike, shape: tuple[int, ...], name: str) -> NDArray[n
     if not np.allclose(matrix, adjoint, atol=1e-12, rtol=0):
         raise ValueError(f"{name} must be Hermitian in its two electronic state indices")
     return 0.5 * matrix + 0.5 * adjoint
+
+
+def _triplet_populations(splittings, temperature_kelvin, degeneracy_tolerance_hartree):
+    thermal_energy = _KB_HARTREE_PER_K * temperature_kelvin
+    if thermal_energy == 0:
+        weights = (splittings <= degeneracy_tolerance_hartree).astype(float)
+    else:
+        with np.errstate(over="ignore", under="ignore"):
+            weights = np.exp(-splittings / thermal_energy)
+    return weights / weights.sum()
 
 
 def spin_orbit_phosphorescence(
@@ -127,13 +141,7 @@ def spin_orbit_phosphorescence(
     population = average_rate = None
     if temperature_kelvin is not None:
         temperature_kelvin = float(temperature_kelvin)
-        thermal_energy = _KB_HARTREE_PER_K * temperature_kelvin
-        if thermal_energy == 0:
-            population = (splittings <= degeneracy_tolerance_hartree).astype(float)
-        else:
-            with np.errstate(over="ignore", under="ignore"):
-                population = np.exp(-splittings / thermal_energy)
-        population /= population.sum()
+        population = _triplet_populations(splittings, temperature_kelvin, degeneracy_tolerance_hartree)
         average_rate = float(np.dot(population, rates))
 
     return PhosphorescenceResult(
@@ -146,4 +154,169 @@ def spin_orbit_phosphorescence(
         temperature_kelvin=temperature_kelvin, sublevel_populations=population,
         vacuum_radiative_rate_s_inverse=average_rate,
         vacuum_radiative_lifetime_s=None if average_rate is None else _lifetime_s(average_rate),
+        degeneracy_tolerance_hartree=float(degeneracy_tolerance_hartree),
+    )
+
+
+def spin_orbit_dipole_derivatives(
+    electronic: PhosphorescenceResult,
+    dipole_operator_au: ArrayLike,
+    hamiltonian_derivatives: ArrayLike,
+    dipole_operator_derivatives: ArrayLike,
+) -> NDArray[np.complex128]:
+    """Differentiate the prepared mixed emission moments at one geometry.
+
+    Derivatives of the complete Hamiltonian and dipole matrices have shapes
+    (state, state, coordinate) and (state, state, coordinate, dipole Cartesian).
+    They are derivatives of the matrix entries in one smoothly transported
+    orthonormal spin-free basis. Include all basis and orbital response in
+    those inputs. Units are Hartree and e·bohr per supplied coordinate.
+    The result has axes (emitting sublevel, coordinate, dipole Cartesian).
+    Each selected state must be individually isolated. The phases use
+    parallel transport in the supplied moving frame.
+    """
+    if not isinstance(electronic, PhosphorescenceResult):
+        raise TypeError("supply a PhosphorescenceResult from spin_orbit_phosphorescence")
+    energies, vectors = electronic.mixed_energies_from_ground_hartree, electronic.mixed_state_vectors
+    n = len(energies)
+    hprime = np.asarray(hamiltonian_derivatives)
+    if hprime.ndim != 3 or hprime.shape[:2] != (n, n) or hprime.shape[-1] == 0:
+        raise ValueError("Hamiltonian derivatives must have shape (state, state, coordinate)")
+    coordinates = hprime.shape[-1]
+    hprime = _hermitian(hprime, (n, n, coordinates), "Hamiltonian derivatives")
+    dprime = _hermitian(dipole_operator_derivatives, (n, n, coordinates, 3), "electric dipole derivatives")
+    dipole = _hermitian(dipole_operator_au, (n, n, 3), "electric dipole")
+    indices = np.r_[0, electronic.triplet_state_indices]
+    selected = vectors[:, indices]
+    reconstructed = np.einsum("a,abc,bj->jc", selected[:, 0].conj(), dipole, selected[:, 1:], optimize=True)
+    if not np.allclose(reconstructed, electronic.transition_dipole_au, rtol=1e-9, atol=1e-12):
+        raise ValueError("dipole operator and spin–orbit result disagree at the expansion geometry")
+
+    gaps = energies[indices][None, :] - energies[:, None]
+    off_diagonal = np.arange(n)[:, None] != indices[None, :]
+    if np.any(np.abs(gaps[off_diagonal]) <= electronic.degeneracy_tolerance_hartree):
+        raise ValueError("individual mixed-state dipole derivatives require isolated electronic sublevels")
+    perturbation = np.einsum("ai,abq,bj->ijq", vectors.conj(), hprime, selected, optimize=True)
+    response = np.divide(perturbation, gaps[:, :, None], out=np.zeros_like(perturbation),
+                         where=off_diagonal[:, :, None])
+    derivative = np.einsum("ai,ijq->ajq", vectors, response, optimize=True)
+    g, t = selected[:, 0].conj(), selected[:, 1:]
+    moment_derivative = (
+        np.einsum("aq,abd,bj->jqd", derivative[:, 0].conj(), dipole, t, optimize=True)
+        + np.einsum("a,abqd,bj->jqd", g, dprime, t, optimize=True)
+        + np.einsum("a,abd,bjq->jqd", g, dipole, derivative[:, 1:], optimize=True)
+    )
+    if not np.isfinite(moment_derivative).all():
+        raise ValueError("mixed-state dipole derivatives exceed the numerical range")
+    return moment_derivative
+
+
+@dataclass(frozen=True)
+class VibronicPhosphorescenceResult:
+    """Prepared AH emission with separately assigned triplet sublevel spectra."""
+
+    temperature_kelvin: float
+    sublevel_populations: NDArray[np.float64]
+    sublevel_00_hartree: NDArray[np.float64]
+    sublevel_rates_resolved: NDArray[np.bool_]
+    sublevel_spectra: tuple[HarmonicSpectrum, ...]
+    basis_attempts: tuple[list[dict], ...]
+
+    @property
+    def physical_properties(self) -> dict:
+        """Report intrinsic sublevel results and the population-weighted rate."""
+        sublevels = []
+        total_rate = 0.0
+        for index, (population, origin, resolved, spectrum) in enumerate(zip(
+            self.sublevel_populations, self.sublevel_00_hartree, self.sublevel_rates_resolved,
+            self.sublevel_spectra, strict=True,
+        )):
+            summary = summarize_spectral_properties(
+                {"emission": spectrum}, spectral_status={"emission": "complete"},
+                temperature_kelvin=self.temperature_kelvin, assignment_scheme="harmonic_quanta",
+            )["spectra"]["emission"]
+            channel_rate = float(population) * summary["vacuum_radiative_rate_s_inverse"]
+            total_rate += channel_rate
+            summary.update(
+                sublevel_index=index, sublevel_population=float(population), origin_00_hartree=float(origin),
+                rate_resolved=bool(resolved), population_weighted_vacuum_rate_s_inverse=channel_rate,
+            )
+            decomposition = condon_ht_properties(spectrum, "emission")
+            if decomposition is not None:
+                summary["condon_herzberg_teller"] = decomposition
+            sublevels.append(summary)
+        return {
+            "model_used": "prepared_phosphorescence_ah",
+            "temperature_kelvin": self.temperature_kelvin,
+            "sublevels": sublevels,
+            "vacuum_radiative_rate_s_inverse": total_rate,
+            "vacuum_radiative_lifetime_s": _lifetime_s(total_rate),
+        }
+
+
+def run_prepared_phosphorescence(
+    parameters: AdiabaticHessianParameters,
+    electronic: PhosphorescenceResult,
+    *,
+    lowest_sublevel_00_hartree: float,
+    dipole_derivatives_au: ArrayLike | None = None,
+    temperature_kelvin: float = 0.0,
+    coverage: float = 0.995,
+    max_quanta: int = DEFAULT_MAX_QUANTA,
+    max_overlaps: int = 250_000,
+) -> VibronicPhosphorescenceResult:
+    """Use a shared triplet harmonic surface and prepared SOC moments for emission.
+
+    The moments must be evaluated at the triplet minimum, in the same
+    Cartesian frame as the harmonic model. Supply the adiabatic 0–0 origin of
+    the lowest spin sublevel, with zero-point energies, on an independent
+    electronic energy reference. The vertical SOC gap is not used as a 0–0
+    origin. Optional complex HT slopes have axes (sublevel, T normal mode,
+    dipole Cartesian). Match the ordering and phases of the electronic
+    moments and the order and signs of the prepared T normal modes.
+    All sublevels share the same geometry and curvature and differ by
+    constant spin splittings. Sublevel and vibrational populations are each
+    Boltzmann-distributed at the requested temperature in the emitting state.
+    """
+    _validate_spectral_options("emission", temperature_kelvin, coverage, max_quanta, max_overlaps)
+    if not isinstance(parameters, AdiabaticHessianParameters) or not isinstance(electronic, PhosphorescenceResult):
+        raise TypeError("supply prepared AH parameters and a PhosphorescenceResult")
+    if (isinstance(lowest_sublevel_00_hartree, bool) or not isinstance(lowest_sublevel_00_hartree, Real)
+            or not isfinite(lowest_sublevel_00_hartree) or lowest_sublevel_00_hartree <= 0):
+        raise ValueError("supply a finite, positive adiabatic 0–0 origin in Hartree")
+    slopes = None
+    if dipole_derivatives_au is not None:
+        slopes = np.asarray(dipole_derivatives_au, dtype=np.complex128)
+        if slopes.shape != (3, parameters.excited_frequencies_hartree.size, 3) or not np.isfinite(slopes).all():
+            raise ValueError("supply finite complex HT slopes with shape (sublevel, T normal mode, 3)")
+
+    rotation = parameters.rotation.T
+    shift = -(rotation @ parameters.shift_au)
+    origin = float(lowest_sublevel_00_hartree) + electronic.sublevel_splittings_hartree
+    population = _triplet_populations(electronic.sublevel_splittings_hartree, temperature_kelvin,
+                                      electronic.degeneracy_tolerance_hartree)
+    spectra, checks = [], []
+    for i, gap in enumerate(origin):
+        def spectrum(**options):
+            return harmonic_spectrum(
+                parameters.excited_frequencies_hartree, parameters.ground_frequencies_hartree,
+                gap_00_hartree=-gap, rotation=rotation, shift_au=shift,
+                transition_dipole_au=electronic.transition_dipole_au[i],
+                dipole_derivatives_au=None if slopes is None else slopes[i], **options,
+            )
+        try:
+            sticks, attempts = _adaptive_spectrum(
+                spectrum, process="emission", temperature=temperature_kelvin, coverage=coverage,
+                max_quanta=max_quanta, max_overlaps=max_overlaps,
+            )
+        except WorkflowIncomplete as error:
+            raise WorkflowIncomplete(
+                f"phosphorescence sublevel {i + 1}: {error}",
+                {**error.diagnostics, "sublevel_index": i}, error.partial_spectra,
+            ) from error
+        spectra.append(sticks)
+        checks.append(attempts)
+    return VibronicPhosphorescenceResult(
+        float(temperature_kelvin), population, origin, electronic.sublevel_rates_resolved.copy(),
+        tuple(spectra), tuple(checks),
     )

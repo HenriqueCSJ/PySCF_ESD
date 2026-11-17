@@ -76,7 +76,7 @@ each_line_contribution = lines.population_weighted_einstein_a_s_inverse
 
 For low-level harmonic or anharmonic sticks, use `esd.summarize_spectral_properties({"emission": emission_sticks})`. Coverage is `unassessed` unless the caller supplies an assessed status. The in-memory report includes the stick properties. The CLI derives its Gaussian peak summaries when it generates the profiles.
 
-The [phosphorescence guide](phosphorescence.md) documents the separate prepared spin–orbit result object, including electronic rates for individual triplet sublevels and their thermal average.
+For prepared AH phosphorescence, `result.physical_properties` gives the vacuum radiative rates and lifetimes, per-sublevel 0–0 origins, dominant lines, and the Condon and Herzberg–Teller terms when present. The [phosphorescence guide](phosphorescence.md) shows how to obtain both the vertical electronic rates and the vibronic results.
 
 ## Thermal profiles and prepared rotors
 

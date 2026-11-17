@@ -242,7 +242,14 @@ def _spectrum_summary(
             line.update(initial_assignment=_assignment(initial[index], scheme),
                         final_assignment=_assignment(final[index], scheme))
         if dipoles is not None:
-            line["transition_dipole_au"] = [_finite(component) for component in dipoles[index]]
+            moment = dipoles[index]
+            if np.iscomplexobj(moment):
+                line["transition_dipole_au"] = {
+                    "real": [_finite(component) for component in moment.real],
+                    "imaginary": [_finite(component) for component in moment.imag],
+                }
+            else:
+                line["transition_dipole_au"] = [_finite(component) for component in moment]
         if process == "absorption":
             line.update(oscillator_strength=float(intrinsic_weights[index]),
                         population_weighted_oscillator_strength=float(absolute_weights[index]))

@@ -205,7 +205,7 @@ The [numerical output guide](docs/numerical-results.md) shows how to extract the
 
 ## Unrestricted DFT and phosphorescence
 
-The first [unrestricted DFT and phosphorescence APIs](docs/phosphorescence.md) accept a converged high-spin UKS reference for analytic triplet derivatives and prepared spin–orbit matrices for electronic phosphorescence rates. The guide specifies the input conventions, the three triplet sublevels, and the remaining steps for vibronic phosphorescence.
+The [unrestricted DFT and phosphorescence APIs](docs/phosphorescence.md) cover analytic derivatives of a high-spin UKS triplet, vertical absorption and emission from prepared UKS/TDA roots, and AH phosphorescence from prepared spin–orbit matrices. The phosphorescence workflow resolves triplet sublevels and supports complex Franck–Condon and Herzberg–Teller amplitudes, Duschinsky rotation, and temperature-dependent vacuum radiative rates.
 
 ## Methods paper
 

@@ -15,8 +15,9 @@ _KB_HARTREE_PER_K = 3.166811563e-6
 class HarmonicSpectrum:
     """Assigned sticks and basis coverage from a harmonic calculation.
 
-    ``transition_dipole_au`` holds the signed Cartesian x, y, z amplitudes
-    for each returned stick, in the same order as the energies and quanta.
+    ``transition_dipole_au`` holds the Cartesian x, y, z amplitudes for
+    each returned stick, in the same order as the energies and quanta.
+    Amplitudes are complex when the dipole or its derivatives are complex.
     The Condon contribution, when decomposed, is the amplitude from the
     constant dipole in the initial surface's coordinate expansion.
     """
@@ -28,8 +29,8 @@ class HarmonicSpectrum:
     dipole_strength_au2: NDArray[np.float64]
     initial_population_coverage: float
     final_dipole_strength_coverage: float | None
-    transition_dipole_au: NDArray[np.float64] | None = None
-    condon_transition_dipole_au: NDArray[np.float64] | None = None
+    transition_dipole_au: NDArray[np.float64] | NDArray[np.complex128] | None = None
+    condon_transition_dipole_au: NDArray[np.float64] | NDArray[np.complex128] | None = None
 
     @property
     def thermal_strength_au2(self) -> NDArray[np.float64]:
@@ -44,6 +45,20 @@ def _real_array(value: ArrayLike, name: str) -> NDArray[np.float64]:
     if not np.all(np.isfinite(array)):
         raise ValueError(f"{name} must be finite")
     return array
+
+
+def _amplitude_array(value: ArrayLike, name: str) -> NDArray[np.float64] | NDArray[np.complex128]:
+    array = np.asarray(value)
+    array = np.asarray(array, dtype=complex if np.iscomplexobj(array) else float)
+    if not np.all(np.isfinite(array)):
+        raise ValueError(f"{name} must be finite")
+    return array
+
+
+def _squared_magnitude(values):
+    if np.iscomplexobj(values):
+        return values.real**2 + values.imag**2
+    return values**2
 
 
 def _fock_states(n_modes: int, max_quanta: int) -> NDArray[np.intp]:
@@ -137,7 +152,7 @@ def _ground_amplitudes(omega_i, omega_f, transform, shift, states, dipole, deriv
     origin, linear, quadratic = _fc_parameters(omega_i, omega_f, transform, shift)
     overlaps = np.empty(len(states))
     overlaps[0] = origin
-    total = float(dipole @ dipole)
+    total = float(np.vdot(dipole, dipole).real)
     if derivatives is None:
         constant = dipole
         slope = None
@@ -147,11 +162,11 @@ def _ground_amplitudes(omega_i, omega_f, transform, shift, states, dipole, deriv
         scaled = derivatives / np.sqrt(2 * omega_i[:, None])
         constant = dipole + linear[:modes] @ scaled
         slope = quadratic[modes:, :modes] @ scaled
-        total += float(np.sum(scaled**2))
+        total += float(np.sum(_squared_magnitude(scaled)))
     final_linear = linear[modes:]
     final_quadratic = quadratic[modes:, modes:]
     indices = {tuple(state): index for index, state in enumerate(states)}
-    amplitudes = np.empty((len(states), 3))
+    amplitudes = np.empty((len(states), 3), dtype=dipole.dtype)
     amplitudes[0] = origin * constant
     for index, state in enumerate(states[1:], start=1):
         work = state.copy()
@@ -195,9 +210,12 @@ def harmonic_spectrum(
     electronic minima energy minus the initial, plus the same difference in
     vibrational zero-point energy.
     Final mass-weighted coordinates obey Q_f = rotation @ Q_i + shift_au,
-    with Q in sqrt(electron mass) * bohr. The real Cartesian dipole is given
-    at Q_i=0. Its optional (n_modes, 3) first derivatives are with respect to
-    Q_i, in atomic units. Cutoffs bound total quanta on each surface.
+    with Q in sqrt(electron mass) * bohr. The Cartesian dipole is given at
+    Q_i=0. Its optional (n_modes, 3) first derivatives are with respect to
+    Q_i, in atomic units. The dipole and derivatives may be real or complex
+    and use the same electronic phase convention. Condon and linear HT
+    amplitudes add before taking the squared Cartesian norm. Cutoffs bound
+    total quanta on each surface.
 
     Results include all positive-photon-energy pairs with populated initial
     states, including zero-strength pairs. Strengths exclude photon-energy
@@ -233,14 +251,15 @@ def harmonic_spectrum(
     shift = np.zeros(modes) if shift_au is None else _real_array(shift_au, "shift_au")
     if shift.shape != (modes,):
         raise ValueError("shift_au must have one entry per mode")
-    dipole = _real_array(transition_dipole_au, "transition_dipole_au")
+    dipole = _amplitude_array(transition_dipole_au, "transition_dipole_au")
     if dipole.shape != (3,):
         raise ValueError("transition_dipole_au must have three Cartesian components")
     derivatives = None
     if dipole_derivatives_au is not None:
-        derivatives = _real_array(dipole_derivatives_au, "dipole_derivatives_au")
+        derivatives = _amplitude_array(dipole_derivatives_au, "dipole_derivatives_au")
         if derivatives.shape != (modes, 3):
             raise ValueError("dipole_derivatives_au must have shape (n_modes, 3)")
+        dipole = dipole.astype(np.result_type(dipole, derivatives), copy=False)
 
     initial_cutoff = int(initial_max_quanta) if temperature_kelvin > 0 and modes else 0
     final_cutoff = int(final_max_quanta) if modes else 0
@@ -262,7 +281,7 @@ def harmonic_spectrum(
     else:
         overlaps = _fc_overlaps(omega_i, omega_f, transform, shift, initial_states, final_states)
         amplitudes = overlaps[:initial_count, :, None] * dipole
-        total_strength = np.full(initial_count, dipole @ dipole)
+        total_strength = np.full(initial_count, np.vdot(dipole, dipole).real)
         thermal_energy = _KB_HARTREE_PER_K * temperature_kelvin
         if thermal_energy == 0:
             populations = (initial_energies == 0).astype(float)
@@ -278,7 +297,7 @@ def harmonic_spectrum(
         scaled_derivatives = derivatives / np.sqrt(2 * omega_i[:, None])
         # Complete final-state closure equals the initial expectation of |mu(Q)|².
         # Number states have zero mean Q and variance (2*n + 1)/(2*omega).
-        total_strength += (2 * retained_initial + 1) @ np.sum(scaled_derivatives**2, axis=1)
+        total_strength += (2 * retained_initial + 1) @ np.sum(_squared_magnitude(scaled_derivatives), axis=1)
         for i, state in enumerate(retained_initial):
             neighbor = state.copy()
             for mode, quanta in enumerate(state):
@@ -290,7 +309,7 @@ def harmonic_spectrum(
                 neighbor[mode] = quanta
                 amplitudes[i] += coordinate_overlap[:, None] * scaled_derivatives[mode]
 
-    strengths = np.sum(amplitudes**2, axis=-1)
+    strengths = np.sum(_squared_magnitude(amplitudes), axis=-1)
     if not np.all(np.isfinite(strengths)) or not np.all(np.isfinite(total_strength)):
         raise ValueError("harmonic dipole strengths exceed the numerical range")
     denominator = float(populations @ total_strength)

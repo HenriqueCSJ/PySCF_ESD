@@ -18,7 +18,7 @@ In a PySCF script, use `from pyscf import esd`. The [`esd.run(mol, ...)` example
 
 Use the [numerical output guide](numerical-results.md) for radiative rates, lifetimes, oscillator strengths, mode analysis, and reading the CLI or Python results.
 
-The [unrestricted DFT and phosphorescence guide](phosphorescence.md) shows the prepared UKS derivative and spin–orbit rate APIs.
+The [unrestricted DFT and phosphorescence guide](phosphorescence.md) shows the prepared UKS derivatives, spin-conserving UKS/TDA vertical spectra, and spin–orbit AH emission APIs.
 
 ## From a single XYZ
 

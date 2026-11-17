@@ -18,6 +18,12 @@ def condon_ht_line_strengths(spectrum) -> dict[str, np.ndarray]:
         return {}
     # Expand |mu_C + mu_HT|² at the amplitude level to preserve interference.
     ht = spectrum.transition_dipole_au - condon
+    if np.iscomplexobj(condon) or np.iscomplexobj(ht):
+        return {
+            "condon_strength_au2": np.sum(np.abs(condon)**2, axis=1),
+            "ht_strength_au2": np.sum(np.abs(ht)**2, axis=1),
+            "condon_ht_interference_au2": 2 * np.sum((condon.conj() * ht).real, axis=1),
+        }
     return {
         "condon_strength_au2": np.sum(condon**2, axis=1),
         "ht_strength_au2": np.sum(ht**2, axis=1),
