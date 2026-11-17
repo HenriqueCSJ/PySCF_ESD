@@ -30,6 +30,53 @@ Supply a closed-shell XYZ in ångström and a new output directory. Defaults are
 
 Use `--xc`, `--basis` and `--charge` for the electronic model, `--reference-checks all` to test the reference at every electronic point, and repeat `--fallback-xc XC` for ordered alternatives in the supported recovery path. `--max-quanta` and `--max-overlaps` bound the vibrational calculation. Run `pyscf-esd --help` for the full list. Check `diagnostics.json` for state assignments, the derivative route and per-spectrum completion. See the [output files](../README.md#output) for spectra and observables.
 
+## Choosing the level of theory
+
+Select the functional, orbital basis and vibrational model independently. These commands use the same harmonic model in the gas phase.
+
+```bash
+pyscf-esd molecule.xyz --xc pbe0 --basis def2-TZVPD --model ah --output pbe0-ah.esd
+pyscf-esd molecule.xyz --xc b3lyp --basis def2-SVP --model ah --output b3lyp-ah.esd
+```
+
+Use PySCF [functional aliases](https://pyscf.org/user/dft.html#predefined-xc-functionals-and-functional-aliases) such as `pbe`, `pbe0`, `b3lyp` and `cam-b3lyp` with [PySCF basis names](https://pyscf.org/user/gto.html#basis-set). The automatic DFT workflow requires a closed-shell all-electron reference and LDA or GGA XC with the required LibXC derivatives. This includes compatible global and range-separated hybrids. Meta-GGA, nonlocal correlation, empirical dispersion and ECPs are outside this workflow. The prepared analytic C-PCM derivatives require a global hybrid.
+
+Use `--charge 2` for a closed-shell dication or `--state 2` for the second singlet at the relaxed ground geometry. In Python, `Settings` from [`pyscf_esd.cpu`](../src/pyscf_esd/cpu.py) exposes `nstates`, `grid_level`, and the SCF and response tolerances. Pass it to [`run_vibronic`](../src/pyscf_esd/workflow.py) with coordinates in bohr.
+
+```python
+from pyscf_esd import run_vibronic
+from pyscf_esd.cpu import Settings
+
+def gas_phase_spectra(symbols, coordinates_bohr):
+    settings = Settings(basis="def2-TZVPD", xc="pbe0", nstates=6, grid_level=4)
+    return run_vibronic(symbols, coordinates_bohr, settings, model="ah", target_index=0)
+```
+
+## Choosing a solvent
+
+The XYZ command currently runs in the gas phase. For the prepared analytic C-PCM route, select the solvent on the GPU4PySCF RKS object. Examples include `cyclohexane`, `water`, `n-hexane` and `acetonitrile`. Named solvents use the [PySCF solvent parameters](https://pyscf.org/user/solvent.html#solvent-parameters). Set `mf.with_solvent.eps` to override the static dielectric constant. Solvent selection changes the electronic calculation. The ESD temperature controls the vibrational populations.
+
+```python
+from gpu4pyscf import dft
+
+def prepare_equilibrium_tda(mol, solvent="cyclohexane", *, xc="pbe0", nstates=5, eps=None):
+    # mol is a PySCF Mole with the desired geometry, charge and all-electron basis.
+    mf = dft.RKS(mol, xc=xc).density_fit().PCM(solvent)
+    mf.with_solvent.method = "C-PCM"
+    if eps is not None:
+        mf.with_solvent.eps = eps
+    mf.grids.prune = None
+    mf.small_rho_cutoff = 0.0
+    mf.cphf_grids = mf.grids
+    mf.kernel()
+    td = mf.TDA(equilibrium_solvation=True)
+    td.nstates = nstates
+    td.kernel()
+    return td
+```
+
+This prepares the response at the supplied geometry. For AH, use the relaxed S₀ and tracked excited-state minima under the same electronic and solvent model. Follow the [analytic derivative example](#analytic-derivatives-for-prepared-c-pcm-roots) and the [prepared AH example](#spectra-from-prepared-electronic-data) to build the spectrum. Other models available in PySCF, including SMD and nonequilibrium PCM, are outside this analytic derivative route.
+
 ## Explicit central differences on CPU
 
 Supply symbols and coordinates in bohr at a stationary S₀ geometry. `include_ht=True` differentiates phase-aligned dipoles. `compute_excited_hessian=True` independently differentiates analytic excited-state gradients. Both use central differences with state tracking. The ground Hessian is analytic.
