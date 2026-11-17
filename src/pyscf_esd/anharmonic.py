@@ -9,6 +9,7 @@ import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
 from .anharmonic_dvr import DVRResult
+from .anharmonic_sampling import PhasedRotorDipole
 from .harmonic import _KB_HARTREE_PER_K, _fc_overlaps, _fock_states, _real_array
 
 
@@ -31,7 +32,12 @@ class HarmonicSpectators:
 
 @dataclass(frozen=True)
 class AnharmonicSpectrum:
-    """Assigned sticks with zero-based DVR levels and spectator occupations."""
+    """Assigned sticks with zero-based DVR levels and spectator occupations.
+
+    Signed dipoles use the phases of the supplied DVR eigenvectors and the
+    harmonic spectator basis. A sign change of an eigenvector leaves the
+    corresponding line strengths invariant.
+    """
 
     photon_energy_hartree: NDArray[np.float64]
     initial_level: NDArray[np.intp]
@@ -42,6 +48,7 @@ class AnharmonicSpectrum:
     dipole_strength_au2: NDArray[np.float64]
     initial_population_coverage: float
     final_dipole_strength_coverage: float | None
+    transition_dipole_au: NDArray[np.float64] | None = None
 
     @property
     def thermal_strength_au2(self) -> NDArray[np.float64]:
@@ -54,7 +61,7 @@ class _SpectatorFactors:
     final_quanta: NDArray[np.intp]
     population: NDArray[np.float64]
     energy_difference: NDArray[np.float64]
-    strength: NDArray[np.float64]
+    overlap: NDArray[np.float64]
     closure: float
 
 
@@ -121,7 +128,7 @@ def _spectator_factors(
             population = np.exp(log_weights + log_inverse_partition)
     closure = float(weights @ retained_strength / weights.sum())
     return _SpectatorFactors(initial_quanta, final_quanta, population, energy_difference,
-                             strength, min(closure, 1.0))
+                             overlap, min(closure, 1.0))
 
 
 def _degeneracy_tolerance(energies: NDArray[np.float64]) -> float:
@@ -141,11 +148,14 @@ def _reject_split_manifold(surface: DVRResult, name: str) -> None:
 
 
 def _initial_populations(initial: DVRResult, thermal_energy: float) -> NDArray[np.float64]:
+    """Retain low-lying populations with normalization over the full DVR grid."""
     all_energies = initial.all_energies_hartree
     retained_count = len(initial.energies_hartree)
     with np.errstate(over="ignore"):
         excitation_energies = all_energies - all_energies[0]
     if thermal_energy == 0:
+        # Uniform populations keep sums over the degenerate ground subspace
+        # invariant under arbitrary rotations of its eigenvectors.
         ground_count = np.count_nonzero(excitation_energies <= _degeneracy_tolerance(all_energies))
         if ground_count > retained_count:
             raise ValueError("initial DVR cutoff splits the degenerate ground manifold")
@@ -157,7 +167,39 @@ def _initial_populations(initial: DVRResult, thermal_energy: float) -> NDArray[n
     return weights[:retained_count] / weights.sum()
 
 
-def _dipole_strengths(
+def _common_dipole(
+    initial: DVRResult, final: DVRResult, transition: ArrayLike | PhasedRotorDipole,
+) -> NDArray[np.float64]:
+    if not isinstance(initial, DVRResult) or not isinstance(final, DVRResult):
+        raise ValueError("initial and final must be DVRResult instances")
+    open_grid = initial.boundary == "dirichlet"
+    if (open_grid != (final.boundary == "dirichlet") or initial.domain != final.domain
+            or not np.array_equal(initial.grid, final.grid)):
+        raise ValueError("initial and final DVR states must use the same grid, domain and compatible boundaries")
+
+    if isinstance(transition, PhasedRotorDipole):
+        if open_grid or not np.array_equal(transition.grid, initial.grid):
+            raise ValueError("a phased transition dipole must use the common rotor grid")
+        expected_sign = 1 if initial.boundary == final.boundary else -1
+        if (isinstance(transition.closure_sign, (bool, np.bool_))
+                or not isinstance(transition.closure_sign, Integral) or transition.closure_sign != expected_sign):
+            raise ValueError("transition dipole closure sign is incompatible with the nuclear boundaries")
+        dipole = _real_array(transition.values_au, "transition_dipole_au")
+        if dipole.shape != (len(initial.grid), 3):
+            raise ValueError("a phased transition dipole must have shape (n_grid, 3)")
+        return dipole
+
+    if "antiperiodic" in (initial.boundary, final.boundary):
+        raise ValueError("antiperiodic DVR states require a phased rotor transition dipole")
+    dipole = _real_array(transition, "transition_dipole_au")
+    if dipole.shape == (3,):
+        dipole = np.broadcast_to(dipole, (len(initial.grid), 3))
+    if dipole.shape != (len(initial.grid), 3):
+        raise ValueError("transition_dipole_au must have shape (3,) or (n_grid, 3)")
+    return dipole
+
+
+def _dipole_amplitudes(
     initial: NDArray[np.float64],
     final: NDArray[np.float64],
     dipole: NDArray[np.float64],
@@ -170,31 +212,31 @@ def _dipole_strengths(
 
     # The square root of the quadrature weight is already included in C.
     # Each component is C_f.T @ diag(mu) @ C_i.
-    strength = np.zeros((initial.shape[1], final.shape[1]))
+    amplitudes = np.empty((initial.shape[1], final.shape[1], 3))
     total_strength = np.zeros(initial.shape[1])
     with np.errstate(over="ignore", invalid="ignore"):
-        for component in dipole.T:
+        for index, component in enumerate(dipole.T):
             weighted_initial = component[:, None] * initial
-            strength += (weighted_initial.T @ final)**2
+            amplitudes[:, :, index] = weighted_initial.T @ final
             total_strength += np.einsum("ni,ni->i", weighted_initial, weighted_initial)
 
         denominator = float(populations @ total_strength)
-        numerator = float(populations @ strength.sum(axis=1))
+        numerator = float(populations @ np.einsum("ifx,ifx->i", amplitudes, amplitudes))
     if not np.all(np.isfinite(total_strength)) or not isfinite(denominator) or not isfinite(numerator):
         raise ValueError("DVR dipole strengths exceed the numerical range")
     if denominator == 0:
-        return strength, None
+        return amplitudes, None
     closure = numerator / denominator
     if closure > 1 + 1e-8:
         raise ValueError("DVR dipole strengths violate the closure bound")
-    return strength, min(closure, 1.0)
+    return amplitudes, min(closure, 1.0)
 
 
 def anharmonic_spectrum(
     initial: DVRResult,
     final: DVRResult,
     *,
-    transition_dipole_au: ArrayLike,
+    transition_dipole_au: ArrayLike | PhasedRotorDipole,
     temperature_kelvin: float = 0.0,
     process: Literal["absorption", "emission"] = "absorption",
     spectators: HarmonicSpectators | None = None,
@@ -208,7 +250,10 @@ def anharmonic_spectrum(
     Pass the emitting surface as `initial` with `process="emission"` to reverse
     the sign. Only strictly positive photon energies are returned. Real dipoles
     use a common Cartesian frame and a consistent electronic phase throughout
-    the scan. Supply a constant (3,) vector or samples of shape (n_grid, 3).
+    the scan. For periodic or Dirichlet pairs, supply a constant (3,) vector
+    or samples of shape (n_grid, 3). If either rotor surface is antiperiodic,
+    use a PhasedRotorDipole on the common grid. Its closure sign must equal
+    the product of both nuclear boundary signs for a periodic integrand.
     This model permits rotations within the harmonic spectator coordinates.
 
     Populations use the full finite-grid DVR partition function and the exact
@@ -227,11 +272,6 @@ def anharmonic_spectrum(
     photon-energy prefactors and broadening. `max_transitions` bounds the number
     of active-times-spectator pairs considered before the photon-energy filter.
     """
-    if not isinstance(initial, DVRResult) or not isinstance(final, DVRResult):
-        raise ValueError("initial and final must be DVRResult instances")
-    if (initial.boundary != final.boundary or initial.domain != final.domain
-            or not np.array_equal(initial.grid, final.grid)):
-        raise ValueError("initial and final DVR states must use the same grid, domain and boundary")
     if not isfinite(temperature_kelvin) or temperature_kelvin < 0:
         raise ValueError("temperature_kelvin must be finite and nonnegative")
     if process not in ("absorption", "emission"):
@@ -242,11 +282,7 @@ def anharmonic_spectrum(
             or max_transitions < 1):
         raise ValueError("max_transitions must be a positive integer")
 
-    dipole = _real_array(transition_dipole_au, "transition_dipole_au")
-    if dipole.shape == (3,):
-        dipole = np.broadcast_to(dipole, (len(initial.grid), 3))
-    if dipole.shape != (len(initial.grid), 3):
-        raise ValueError("transition_dipole_au must have shape (3,) or (n_grid, 3)")
+    dipole = _common_dipole(initial, final, transition_dipole_au)
 
     thermal_energy = _KB_HARTREE_PER_K * temperature_kelvin
     initial_population = _initial_populations(initial, thermal_energy)
@@ -254,7 +290,7 @@ def anharmonic_spectrum(
     n_initial = len(initial_population)
     active_pair_count = n_initial * len(final.energies_hartree)
     bath = _spectator_factors(spectators, thermal_energy, int(max_transitions) // active_pair_count)
-    active_strength, active_closure = _dipole_strengths(
+    active_dipole, active_closure = _dipole_amplitudes(
         initial.coefficients[:, :n_initial], final.coefficients, dipole, initial_population
     )
 
@@ -268,6 +304,9 @@ def anharmonic_spectrum(
     i, f, bi, bf = np.nonzero((photon_energy > 0) & (population[:, None, :, None] > 0))
     order = np.argsort(photon_energy[i, f, bi, bf], kind="stable")
     i, f, bi, bf = i[order], f[order], bi[order], bf[order]
+    # A spectator-independent dipole gives a product of the active dipole
+    # matrix element and a signed spectator overlap.
+    amplitudes = active_dipole[i, f] * bath.overlap[bi, bf, None]
     return AnharmonicSpectrum(
         photon_energy_hartree=photon_energy[i, f, bi, bf],
         initial_level=i,
@@ -275,7 +314,8 @@ def anharmonic_spectrum(
         initial_spectator_quanta=bath.initial_quanta[bi],
         final_spectator_quanta=bath.final_quanta[bf],
         population=population[i, bi],
-        dipole_strength_au2=active_strength[i, f] * bath.strength[bi, bf],
+        dipole_strength_au2=np.einsum("ix,ix->i", amplitudes, amplitudes),
         initial_population_coverage=min(float(initial_population.sum() * bath.population.sum()), 1.0),
         final_dipole_strength_coverage=None if active_closure is None else active_closure * bath.closure,
+        transition_dipole_au=amplitudes,
     )

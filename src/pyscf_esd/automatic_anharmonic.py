@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING, Protocol
 import numpy as np
 from numpy.typing import NDArray
 
-from .cpu import ElectronicConvergenceError
+from .cpu import ElectronicConvergenceError, ReferenceStabilityUnresolvedError, UnstableReferenceError
 from .harmonic import HarmonicSpectrum, _KB_HARTREE_PER_K, _fc_overlaps, _fock_states
 from .pyscf_adapter import AdiabaticHessianParameters
 from .state_tracking import StateTrackingError
@@ -275,6 +275,8 @@ def prepare_anharmonic(electronic: _ElectronicSurfaces) -> AutomaticAnharmonic:
             surfaces.append(_fit_surface(
                 evaluate, float(minimum), omega, cartesian_modes, projected_displacement, report,
             ))
+        except (ReferenceStabilityUnresolvedError, UnstableReferenceError):
+            raise
         except (AnharmonicUnavailableError, ElectronicConvergenceError, StateTrackingError) as error:
             diagnostics["reasons"].append(f"{name} surface: {error}")
             return AutomaticAnharmonic(electronic, diagnostics, None)
@@ -284,6 +286,8 @@ def prepare_anharmonic(electronic: _ElectronicSurfaces) -> AutomaticAnharmonic:
 
 
 def _fit_surface(evaluate, minimum, omega, cartesian_modes, projected_displacement, report):
+    # Use dimensionless x = sqrt(omega) Q so the sampled harmonic cut
+    # is omega*x²/2. The fit adds only terms above quadratic order.
     modes = omega.size
     scaled_modes = cartesian_modes / np.sqrt(omega)[:, None, None]
     displacement = np.sqrt(omega) * projected_displacement
@@ -499,6 +503,8 @@ def _vci_states(surface, cutoff, padding, inner_radius, outer_radius):
     order = cutoff + padding
     basis = _fock_states(surface.omega.size, order)
     retained = comb(surface.omega.size + cutoff, surface.omega.size)
+    # The AH 0–0 reference already includes harmonic ZPE. Store the VCI
+    # eigenvalues relative to the harmonic zero-point level on each surface.
     hamiltonian = np.diag(basis @ surface.omega)
     powers = _projected_powers(order, inner_radius, outer_radius)
     for term in surface.terms:
@@ -599,6 +605,7 @@ def _dipole_source(basis, states, omega, dipole, derivatives):
 
 
 def _populations(energies, labels, omega, temperature):
+    """Replace the retained terms of a harmonic partition with modeled energies."""
     thermal_energy = _KB_HARTREE_PER_K * temperature
     if not thermal_energy:
         populations = np.zeros(len(labels))

@@ -17,6 +17,8 @@ class HarmonicSpectrum:
 
     ``transition_dipole_au`` holds the signed Cartesian x, y, z amplitudes
     for each returned stick, in the same order as the energies and quanta.
+    The Condon contribution, when decomposed, is the amplitude from the
+    constant dipole in the initial surface's coordinate expansion.
     """
 
     photon_energy_hartree: NDArray[np.float64]
@@ -27,6 +29,7 @@ class HarmonicSpectrum:
     initial_population_coverage: float
     final_dipole_strength_coverage: float | None
     transition_dipole_au: NDArray[np.float64] | None = None
+    condon_transition_dipole_au: NDArray[np.float64] | None = None
 
     @property
     def thermal_strength_au2(self) -> NDArray[np.float64]:
@@ -65,6 +68,7 @@ def _fc_parameters(
     rotation: NDArray[np.float64],
     shift: NDArray[np.float64],
 ):
+    """Combine the two ground-state Gaussians in the initial coordinates."""
     modes = omega_i.size
     precision = np.diag(omega_i) + rotation.T @ (omega_f[:, None] * rotation)
     cholesky = np.linalg.cholesky(precision)
@@ -79,8 +83,9 @@ def _fc_parameters(
     if log_overlap < np.log(np.finfo(float).tiny):
         raise ValueError("ground-state overlap underflows in the harmonic recurrence")
 
-    # Coefficients of exp(linear @ t + t.T @ quadratic @ t / 2),
-    # scaled by sqrt(n!) and by the ground-state overlap.
+    # The generating variables t are ordered as initial then final modes.
+    # Multiply the monomial coefficient of exp(l.T @ t + t.T @ Q @ t / 2)
+    # by the ground-state overlap and sqrt(product(n_j!)) to obtain the FC amplitude.
     scale_i = np.sqrt(2 * omega_i)
     scale_f = np.sqrt(2 * omega_f)
     sources = np.vstack((np.diag(scale_i), scale_f[:, None] * rotation))
@@ -137,6 +142,8 @@ def _ground_amplitudes(omega_i, omega_f, transform, shift, states, dipole, deriv
         constant = dipole
         slope = None
     else:
+        # Q_i on the initial vacuum creates only one quantum in mode i.
+        # Differentiate the generating function once in that mode at t_i=0.
         scaled = derivatives / np.sqrt(2 * omega_i[:, None])
         constant = dipole + linear[:modes] @ scaled
         slope = quadratic[modes:, :modes] @ scaled
@@ -164,7 +171,7 @@ def _ground_amplitudes(omega_i, omega_f, transform, shift, states, dipole, deriv
                 work[other] -= 1
                 amplitudes[index] += slope[other] * np.sqrt(state[other]) * overlaps[indices[tuple(work)]]
                 work[other] += 1
-    return amplitudes[None, :, :], np.array([total])
+    return amplitudes[None, :, :], np.array([total]), overlaps[None, :]
 
 
 def harmonic_spectrum(
@@ -238,6 +245,8 @@ def harmonic_spectrum(
     initial_cutoff = int(initial_max_quanta) if temperature_kelvin > 0 and modes else 0
     final_cutoff = int(final_max_quanta) if modes else 0
     initial_count = comb(modes + initial_cutoff, modes)
+    # The linear dipole can raise the initial state by one quantum, so
+    # the overlap basis needs a layer beyond the populated basis.
     overlap_cutoff = initial_cutoff + int(derivatives is not None and modes > 0 and temperature_kelvin > 0)
     if comb(modes + overlap_cutoff, modes) * comb(modes + final_cutoff, modes) > max_overlaps:
         raise ValueError("the requested basis exceeds max_overlaps")
@@ -247,7 +256,7 @@ def harmonic_spectrum(
     initial_energies = retained_initial @ omega_i
     if temperature_kelvin == 0.0:
         populations = np.ones(1)
-        amplitudes, total_strength = _ground_amplitudes(
+        amplitudes, total_strength, overlaps = _ground_amplitudes(
             omega_i, omega_f, transform, shift, final_states, dipole, derivatives,
         )
     else:
@@ -259,12 +268,16 @@ def harmonic_spectrum(
             populations = (initial_energies == 0).astype(float)
         else:
             with np.errstate(over="ignore", under="ignore"):
+                # Use the untruncated oscillator partition so omitted hot
+                # states reduce the reported population coverage.
                 log_inverse_partition = np.log(-np.expm1(-omega_i / thermal_energy)).sum()
                 populations = np.exp(log_inverse_partition - initial_energies / thermal_energy)
 
     if derivatives is not None and temperature_kelvin > 0:
         initial_indices = {tuple(state): idx for idx, state in enumerate(initial_states)}
         scaled_derivatives = derivatives / np.sqrt(2 * omega_i[:, None])
+        # Complete final-state closure equals the initial expectation of |mu(Q)|².
+        # Number states have zero mean Q and variance (2*n + 1)/(2*omega).
         total_strength += (2 * retained_initial + 1) @ np.sum(scaled_derivatives**2, axis=1)
         for i, state in enumerate(retained_initial):
             neighbor = state.copy()
@@ -297,4 +310,5 @@ def harmonic_spectrum(
         initial_population_coverage=float(populations.sum()),
         final_dipole_strength_coverage=coverage,
         transition_dipole_au=amplitudes[i, f],
+        condon_transition_dipole_au=overlaps[i, f, None] * dipole if derivatives is not None else None,
     )

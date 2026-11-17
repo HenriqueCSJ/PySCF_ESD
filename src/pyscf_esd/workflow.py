@@ -5,14 +5,17 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, replace
 from math import isfinite
 from numbers import Integral, Real
-from typing import Callable, Literal
+from typing import Callable, Literal, Sequence
 
 import numpy as np
 from numpy.typing import ArrayLike
 
-from .cpu import ElectronicConvergenceError, Settings
+from .anharmonic import AnharmonicSpectrum
+from .cpu import ElectronicConvergenceError, ReferenceStabilityUnresolvedError, Settings, UnstableReferenceError
 from .harmonic import HarmonicSpectrum
+from .pyscf_adapter import AdiabaticHessianParameters
 from .state_tracking import StateTrackingError
+from .vibronic_properties import condon_ht_properties, harmonic_deformation_check, harmonic_model_properties
 
 
 DEFAULT_SETTINGS = Settings("def2-tzvpd", "pbe0")
@@ -34,8 +37,44 @@ class VibronicResult:
 
     model_requested: str
     model_used: str
-    spectra: dict[str, HarmonicSpectrum]
+    spectra: dict[str, HarmonicSpectrum | AnharmonicSpectrum]
     diagnostics: dict
+
+    @property
+    def physical_properties(self) -> dict:
+        """Quantitative properties of the retained spectrum and its input model."""
+        from .spectral_properties import summarize_spectral_properties
+
+        assignment = {
+            "ah_fc": "harmonic_quanta",
+            "ah_ht": "harmonic_quanta",
+            "vg": "harmonic_quanta",
+            "anharmonic_ht": "vci_dominant_harmonic_labels",
+            "anharmonic_direct_diatomic": "dvr_levels",
+        }.get(self.model_used)
+        properties = summarize_spectral_properties(
+            self.spectra, spectral_status=self.diagnostics.get("spectral_status"),
+            temperature_kelvin=self.diagnostics.get("temperature_kelvin"),
+            assignment_scheme=assignment,
+        )
+        properties["model_used"] = self.model_used
+        for key in ("reference_target_index", "atom_symbols", "electronic_method", "electronic_validation"):
+            if key in self.diagnostics:
+                properties[key] = self.diagnostics[key]
+        for process, spectrum in self.spectra.items():
+            decomposition = condon_ht_properties(spectrum, process)
+            if decomposition is not None:
+                properties["spectra"][process]["condon_herzberg_teller"] = decomposition
+        electronic = self.diagnostics.get("electronic", {})
+        for name in ("electronic_relaxation", "harmonic_reference"):
+            source = electronic if name in electronic else self.diagnostics
+            if name in source:
+                properties[name] = source[name]
+        if "electronic_relaxation" in properties and "harmonic_reference" in properties:
+            properties["harmonic_cross_minimum_check"] = harmonic_deformation_check(
+                properties["electronic_relaxation"], properties["harmonic_reference"],
+            )
+        return properties
 
 
 def _adaptive_spectrum(
@@ -89,6 +128,120 @@ def _adaptive_spectrum(
             )
 
 
+def _prepare_reference(prepare, settings: Settings, fallback_xc: Sequence[str], attempts: list[dict], progress):
+    """Restart preparation for an allowed stability recovery on one Hamiltonian at a time."""
+    functionals = tuple(dict.fromkeys((settings.xc, *fallback_xc)))
+    for index, xc in enumerate(functionals):
+        candidate = settings if index == 0 else replace(settings, xc=xc, stability_checks="all")
+        while True:
+            try:
+                result = prepare(candidate)
+            except UnstableReferenceError as error:
+                attempts.append({
+                    "xc": xc, "stability_checks": candidate.stability_checks, "status": "unstable",
+                    "channel": error.channel, "geometry_stage": error.stage, "reason": str(error),
+                })
+                if error.channel == "internal" and candidate.stability_checks == "minima":
+                    if progress is not None:
+                        progress(f"Restarting {xc} with restricted orbital-stability recovery at each point")
+                    candidate = replace(candidate, stability_checks="all")
+                    continue
+                if error.channel == "restricted_to_unrestricted" and index + 1 < len(functionals):
+                    if progress is not None:
+                        progress(f"Restarting the electronic workflow with alternate XC {functionals[index + 1]}")
+                    break
+                raise
+            except ReferenceStabilityUnresolvedError as error:
+                attempts.append({
+                    "xc": xc, "stability_checks": candidate.stability_checks, "status": "stability_unresolved",
+                    "channel": error.channel, "geometry_stage": error.stage, "reason": str(error),
+                })
+                raise
+            except WorkflowIncomplete:
+                attempts.append({
+                    "xc": xc, "stability_checks": candidate.stability_checks, "status": "incomplete",
+                })
+                raise
+            except (ElectronicConvergenceError, StateTrackingError) as error:
+                attempts.append({
+                    "xc": xc, "stability_checks": candidate.stability_checks, "status": "electronic_failure",
+                    "failure_kind": "state_tracking" if isinstance(error, StateTrackingError) else "convergence",
+                    "reason": str(error),
+                })
+                raise
+            else:
+                attempts.append({
+                    "xc": xc, "stability_checks": candidate.stability_checks, "status": "prepared",
+                })
+                return result
+
+
+def _validate_spectral_options(process, temperature_kelvin, coverage, max_quanta, max_overlaps):
+    if process not in ("both", "absorption", "emission"):
+        raise ValueError("process must be both, absorption or emission")
+    if (isinstance(temperature_kelvin, bool) or not isinstance(temperature_kelvin, Real)
+            or not isfinite(temperature_kelvin) or temperature_kelvin < 0):
+        raise ValueError("temperature_kelvin must be nonnegative and finite")
+    if isinstance(coverage, bool) or not isinstance(coverage, Real) or not 0 < coverage < 1:
+        raise ValueError("coverage must be between zero and one")
+    for name, value, minimum in (("max_quanta", max_quanta, 0), ("max_overlaps", max_overlaps, 1)):
+        if isinstance(value, bool) or not isinstance(value, Integral) or value < minimum:
+            raise ValueError(f"{name} must be an integer >= {minimum}")
+
+
+def run_prepared_ah(
+    parameters: AdiabaticHessianParameters,
+    transition_dipole_au: ArrayLike,
+    *,
+    electronic_method: str,
+    dipole_derivatives_au: ArrayLike | None = None,
+    process: Literal["both", "absorption", "emission"] = "both",
+    temperature_kelvin: float = 0.0,
+    coverage: float = 0.995,
+    max_quanta: int = DEFAULT_MAX_QUANTA,
+    max_overlaps: int = 250_000,
+    progress: Callable[[str], None] | None = None,
+) -> VibronicResult:
+    """Run adaptive AH spectroscopy from explicitly prepared electronic data.
+
+    Supply an AH model, normally built with `adiabatic_hessian`, and a
+    length-gauge transition dipole at the ground minimum. Optional linear
+    derivatives use its ground normal coordinates and the same phase. The
+    caller qualifies the electronic surfaces, derivatives and state identity.
+    Absorption and emission share the input gap and the ordinary workflow
+    coverage checks. There are no electronic calculations or method retries.
+    """
+    _validate_spectral_options(process, temperature_kelvin, coverage, max_quanta, max_overlaps)
+    if not isinstance(parameters, AdiabaticHessianParameters):
+        raise ValueError("supply AdiabaticHessianParameters from the prepared electronic surfaces")
+    if not isinstance(electronic_method, str) or not electronic_method.strip():
+        raise ValueError("electronic_method must identify the method used to prepare both surfaces")
+
+    def solver(**options):
+        return parameters.spectrum(
+            transition_dipole_au=transition_dipole_au, dipole_derivatives_au=dipole_derivatives_au, **options,
+        )
+
+    diagnostics = {
+        "electronic_method": electronic_method.strip(),
+        "electronic_validation": "caller_supplied",
+        "temperature_kelvin": float(temperature_kelvin),
+        "target_coverage": float(coverage),
+        "basis_attempts": {},
+        "harmonic_gap_00_hartree": parameters.gap_00_hartree,
+        "harmonic_reference": harmonic_model_properties(
+            parameters, dipole_derivatives_au=dipole_derivatives_au,
+            transition_dipole_at_ground_au=transition_dipole_au,
+        ),
+        "vibronic_terms": {"duschinsky": True, "herzberg_teller": dipole_derivatives_au is not None},
+    }
+    used = "ah_fc" if dipole_derivatives_au is None else "ah_ht"
+    return _qualify_spectra(
+        solver, "ah", used, diagnostics, process=process, temperature_kelvin=temperature_kelvin,
+        coverage=coverage, max_quanta=max_quanta, max_overlaps=max_overlaps, progress=progress,
+    )
+
+
 def run_vibronic(
     symbols: tuple[str, ...],
     coordinates_bohr: ArrayLike,
@@ -101,6 +254,7 @@ def run_vibronic(
     coverage: float = 0.995,
     max_quanta: int = DEFAULT_MAX_QUANTA,
     max_overlaps: int = 250_000,
+    fallback_xc: Sequence[str] = (),
     progress: Callable[[str], None] | None = None,
 ) -> VibronicResult:
     """Predict singlet absorption and/or relaxed-state emission from one geometry.
@@ -112,20 +266,16 @@ def run_vibronic(
     cannot be qualified raises WorkflowIncomplete with available diagnostics.
     ``model="ah"`` requests the harmonic calculation directly and ``model="vg"``
     explicitly requests the vertical-gradient approximation.
+    An internal orbital instability can retry the same restricted model.
+    Supply ordered ``fallback_xc`` alternatives to permit a fresh electronic
+    preparation after a restricted-to-unrestricted instability. The target
+    index is defined at the ground minimum of each attempted functional.
     """
     if model not in ("auto", "ah", "vg"):
         raise ValueError("model must be auto, ah or vg")
-    if process not in ("both", "absorption", "emission"):
-        raise ValueError("process must be both, absorption or emission")
-    if (isinstance(temperature_kelvin, bool) or not isinstance(temperature_kelvin, Real)
-            or not isfinite(temperature_kelvin) or temperature_kelvin < 0):
-        raise ValueError("temperature_kelvin must be nonnegative and finite")
-    if isinstance(coverage, bool) or not isinstance(coverage, Real) or not 0 < coverage < 1:
-        raise ValueError("coverage must be between zero and one")
-    for name, value, minimum in (("max_quanta", max_quanta, 0), ("max_overlaps", max_overlaps, 1),
-                                  ("target_index", target_index, 0)):
-        if isinstance(value, bool) or not isinstance(value, Integral) or value < minimum:
-            raise ValueError(f"{name} must be an integer >= {minimum}")
+    _validate_spectral_options(process, temperature_kelvin, coverage, max_quanta, max_overlaps)
+    if isinstance(target_index, bool) or not isinstance(target_index, Integral) or target_index < 0:
+        raise ValueError("target_index must be an integer >= 0")
     if isinstance(symbols, str):
         raise ValueError("provide one element symbol per atom")
     symbols = tuple(symbols)
@@ -136,13 +286,46 @@ def run_vibronic(
         settings = replace(DEFAULT_SETTINGS, nstates=max(DEFAULT_SETTINGS.nstates, target_index + 2))
     elif not isinstance(settings, Settings):
         raise ValueError("settings must be a pyscf_esd.cpu.Settings instance")
+    if isinstance(fallback_xc, str):
+        raise ValueError("fallback_xc must be a sequence of XC names")
+    fallback_xc = tuple(fallback_xc)
+    if any(not isinstance(xc, str) or not xc.strip() for xc in fallback_xc):
+        raise ValueError("fallback_xc must contain nonempty XC names")
     if model == "vg" and target_index >= settings.nstates - 1:
         raise ValueError("request the target root and at least one higher reference root")
 
+    requested = asdict(settings)
+    attempts = []
+    try:
+        result = _prepare_reference(
+            lambda candidate: _run_vibronic_model(
+                symbols, geometry, candidate, target_index=target_index, model=model, process=process,
+                temperature_kelvin=temperature_kelvin, coverage=coverage, max_quanta=max_quanta,
+                max_overlaps=max_overlaps, progress=progress,
+            ),
+            settings, fallback_xc, attempts, progress,
+        )
+    except WorkflowIncomplete as error:
+        error.diagnostics.update(settings_requested=requested, reference_attempts=attempts)
+        raise
+    except (ElectronicConvergenceError, StateTrackingError) as error:
+        stage = "electronic_vg" if model == "vg" else "electronic_ah"
+        raise WorkflowIncomplete(str(error), {
+            "settings_requested": requested, "reference_attempts": attempts, "stage": stage,
+        }) from error
+    result.diagnostics.update(settings_requested=requested, reference_attempts=attempts)
+    return result
+
+
+def _run_vibronic_model(
+    symbols, geometry, settings, *, target_index, model, process, temperature_kelvin,
+    coverage, max_quanta, max_overlaps, progress,
+) -> VibronicResult:
     from .electronic_workflow import optimize_ground, prepare_electronic
 
     diagnostics = {
         "settings": asdict(settings), "reference_target_index": int(target_index),
+        "atom_symbols": list(symbols),
         "temperature_kelvin": float(temperature_kelvin), "target_coverage": float(coverage),
         "basis_attempts": {},
     }
@@ -151,26 +334,21 @@ def run_vibronic(
 
         if progress is not None:
             progress("Optimizing S0 and evaluating the vertical-gradient model")
-        try:
-            ground = optimize_ground(symbols, geometry, settings)
-            vg = run_cpu_vibronic(symbols, ground, settings, target_index=target_index)
-        except (ElectronicConvergenceError, StateTrackingError) as error:
-            raise WorkflowIncomplete(str(error), {**diagnostics, "stage": "electronic_vg"}) from error
+        ground = optimize_ground(symbols, geometry, settings)
+        vg = run_cpu_vibronic(symbols, ground, settings, target_index=target_index)
         diagnostics["ground_coordinates_bohr"] = np.asarray(ground).tolist()
         diagnostics["gap_00_hartree"] = vg.model.gap_00_hartree
+        diagnostics["harmonic_reference"] = harmonic_model_properties(vg.model)
         diagnostics["vibronic_terms"] = {"duschinsky": False, "herzberg_teller": False}
         solver = vg.spectrum
         used = "vg"
     else:
         if progress is not None:
             progress("Optimizing S0 and the tracked singlet and checking electronic derivatives")
-        try:
-            electronic = prepare_electronic(
-                symbols, geometry, settings, target_index=target_index,
-                direct_dipole=model == "auto" and len(symbols) == 2,
-            )
-        except (ElectronicConvergenceError, StateTrackingError) as error:
-            raise WorkflowIncomplete(str(error), {**diagnostics, "stage": "electronic_ah"}) from error
+        electronic = prepare_electronic(
+            symbols, geometry, settings, target_index=target_index,
+            direct_dipole=model == "auto" and len(symbols) == 2,
+        )
         diagnostics.update(
             electronic=electronic.diagnostics,
             ground_coordinates_bohr=electronic.ground_coordinates_bohr.tolist(),
@@ -186,7 +364,7 @@ def run_vibronic(
             )
 
         solver = ah_spectrum
-        used = "ah_ht"
+        used = "ah_fc" if electronic.dipole_derivatives_au is None else "ah_ht"
         if model == "auto":
             from .automatic_anharmonic import AnharmonicUnavailableError, prepare_anharmonic
 
@@ -228,6 +406,15 @@ def run_vibronic(
             elif status != "harmonic_screened":
                 raise RuntimeError(f"unknown anharmonic screening status {status!r}")
 
+    return _qualify_spectra(
+        solver, model, used, diagnostics, process=process, temperature_kelvin=temperature_kelvin,
+        coverage=coverage, max_quanta=max_quanta, max_overlaps=max_overlaps, progress=progress,
+    )
+
+
+def _qualify_spectra(
+    solver, model, used, diagnostics, *, process, temperature_kelvin, coverage, max_quanta, max_overlaps, progress,
+):
     spectra = {}
     origins = {}
     failures = {}

@@ -9,6 +9,7 @@ from numpy.typing import ArrayLike, NDArray
 
 _MAX_GRID_POINTS = 1024
 _GRID_RTOL = 1e-8
+_Boundary = Literal["dirichlet", "periodic", "antiperiodic"]
 
 
 @dataclass(frozen=True)
@@ -21,13 +22,13 @@ class DVRResult:
     function uses the coefficients directly, without another spacing factor.
 
     ``domain`` holds the endpoints of the domain. The upper endpoint is omitted
-    on a periodic grid and both endpoints are omitted on a Dirichlet grid.
+    on a rotor grid and both endpoints are omitted on a Dirichlet grid.
     ``all_energies_hartree`` contains every eigenvalue of the finite DVR
     Hamiltonian. Only the lowest levels have retained coefficients.
     """
 
     grid: NDArray[np.float64]
-    boundary: Literal["dirichlet", "periodic"]
+    boundary: _Boundary
     spacing: float
     domain: tuple[float, float]
     kinetic_coefficient: float
@@ -66,15 +67,42 @@ def _positive_scalar(value: float, name: str) -> float:
     return scalar
 
 
-def _kinetic_matrix(
-    n_points: int, kinetic_scale: float, boundary: Literal["dirichlet", "periodic"]
-) -> NDArray[np.float64]:
+def _uniform_spacing(coordinates: NDArray[np.float64]) -> float:
+    with np.errstate(over="ignore", under="ignore", invalid="ignore"):
+        steps = np.diff(coordinates)
+        spacing = float((coordinates[-1] - coordinates[0]) / (len(coordinates) - 1))
+    if not np.isfinite(spacing) or spacing <= 0 or np.any(steps <= 0):
+        raise ValueError("grid must be strictly increasing with finite spacing")
+    if not np.allclose(steps, spacing, rtol=_GRID_RTOL, atol=0):
+        raise ValueError("grid must be uniformly spaced")
+    return spacing
+
+
+def _rotor_domain(
+    coordinates: NDArray[np.float64], spacing: float, period: float | None,
+) -> tuple[float, float]:
+    cycle = 2 * np.pi if period is None else _positive_scalar(period, "period")
+    grid_period = len(coordinates) * spacing
+    if not np.isclose(grid_period, cycle, rtol=_GRID_RTOL, atol=0):
+        raise ValueError("rotor grid must cover one period without a repeated endpoint")
+    return float(coordinates[0]), float(coordinates[0]) + grid_period
+
+
+def _kinetic_matrix(n_points: int, kinetic_scale: float, boundary: _Boundary) -> NDArray[np.float64]:
     if boundary == "periodic":
         # The Fourier kinetic operator is circulant in the coordinate grid.
         modes = 2 * np.fft.fftfreq(n_points)
         kernel = np.fft.ifft(kinetic_scale * modes**2).real
         points = np.arange(n_points)
         return kernel[np.subtract.outer(points, points)]
+    if boundary == "antiperiodic":
+        # Multiply the integer Fourier basis by exp(i*pi*j/N) to shift to
+        # half-integer modes. The kinetic kernel changes sign at the seam.
+        modes = 2 * np.fft.fftfreq(n_points) + 1 / n_points
+        kernel = np.fft.ifft(kinetic_scale * modes**2)
+        offsets = np.arange(n_points)
+        kernel = (np.exp(1j * np.pi * offsets / n_points) * kernel).real
+        return kernel[np.abs(np.subtract.outer(offsets, offsets))]
 
     points = np.arange(1, n_points + 1)
     modes = points / (n_points + 1)
@@ -86,7 +114,7 @@ def solve_dvr(
     grid: ArrayLike,
     potential_hartree: ArrayLike,
     *,
-    boundary: Literal["dirichlet", "periodic"],
+    boundary: _Boundary,
     n_levels: int,
     kinetic_coefficient: float = 1.0,
     period: float | None = None,
@@ -98,10 +126,12 @@ def solve_dvr(
     is 1. For a rotor with q in radians, it is ``1 / I``, with I in electron
     mass * bohr².
 
-    Supply 3 to 1024 uniformly spaced, strictly increasing points. A periodic
+    Supply 3 to 1024 uniformly spaced, strictly increasing points. A rotor
     grid spans one cycle with the repeated endpoint excluded. Its period
-    defaults to 2π. Dirichlet walls are located one spacing beyond the first
-    and last supplied points.
+    defaults to 2π for either boundary. A periodic nuclear function repeats
+    after one cycle, while an antiperiodic function reverses sign. The scalar
+    potential remains periodic in both cases. Dirichlet walls are located
+    one spacing beyond the first and last supplied points.
 
     Supply one potential energy in Hartree per grid point. The eigenvalues
     keep the potential's energy reference, so use the same reference on both
@@ -109,8 +139,8 @@ def solve_dvr(
     eigenvalues, with coefficients retained for ``n_levels`` lowest states.
     Eigenvectors in degenerate subspaces may mix under a basis rotation.
     """
-    if boundary not in ("dirichlet", "periodic"):
-        raise ValueError("boundary must be dirichlet or periodic")
+    if boundary not in ("dirichlet", "periodic", "antiperiodic"):
+        raise ValueError("boundary must be dirichlet, periodic or antiperiodic")
     coordinates = _real_vector(grid, "grid")
     n_points = coordinates.size
     if not 3 <= n_points <= _MAX_GRID_POINTS:
@@ -126,22 +156,12 @@ def solve_dvr(
         raise ValueError("potential_hartree must contain one energy per grid point")
     coefficient = _positive_scalar(kinetic_coefficient, "kinetic_coefficient")
 
-    with np.errstate(over="ignore", under="ignore", invalid="ignore"):
-        steps = np.diff(coordinates)
-        spacing = float((coordinates[-1] - coordinates[0]) / (n_points - 1))
-    if not np.isfinite(spacing) or spacing <= 0 or np.any(steps <= 0):
-        raise ValueError("grid must be strictly increasing with finite spacing")
-    if not np.allclose(steps, spacing, rtol=_GRID_RTOL, atol=0):
-        raise ValueError("grid must be uniformly spaced")
-    if boundary == "periodic":
-        cycle = 2 * np.pi if period is None else _positive_scalar(period, "period")
-        grid_period = n_points * spacing
-        if not np.isclose(grid_period, cycle, rtol=_GRID_RTOL, atol=0):
-            raise ValueError("periodic grid must cover one period without a repeated endpoint")
-        domain = (float(coordinates[0]), float(coordinates[0]) + grid_period)
+    spacing = _uniform_spacing(coordinates)
+    if boundary != "dirichlet":
+        domain = _rotor_domain(coordinates, spacing, period)
     else:
         if period is not None:
-            raise ValueError("period is only defined for a periodic grid")
+            raise ValueError("period is only defined for a rotor grid")
         domain = (float(coordinates[0]) - spacing, float(coordinates[-1]) + spacing)
     if (
         not all(np.isfinite(domain))

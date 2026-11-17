@@ -8,7 +8,9 @@ from tempfile import NamedTemporaryFile
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
-from .cpu import ElectronicConvergenceError, ElectronicPoint, Settings, build_molecule, solve_point
+from .cpu import (
+    ElectronicConvergenceError, ElectronicPoint, Settings, build_molecule, require_stable_reference, solve_point,
+)
 from .harmonic import HarmonicSpectrum, harmonic_spectrum
 from .pyscf_adapter import VerticalGradientParameters, vertical_gradient
 from .state_tracking import StateMatch, StateTrackingError, orbital_overlap_blocks, track_state
@@ -128,8 +130,7 @@ def _prepare_vg_center(
     minimum_gap_hartree: float, ground_hessian_symmetry_tolerance: float,
 ) -> CpuVibronicResult:
     """Apply the same central-state checks and construct VG on either device."""
-    if not all(center.reference_stability()):
-        raise ValueError("the center RKS reference failed its internal or external stability check")
+    require_stable_reference(*center.reference_stability(), "Vertical-gradient center reference")
     target_index = int(target_index)
     differences = np.abs(center.excitation_energies_hartree - center.excitation_energies_hartree[target_index])
     differences[target_index] = np.inf

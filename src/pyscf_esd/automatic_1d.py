@@ -8,7 +8,7 @@ from .anharmonic_dvr import solve_dvr
 from .automatic_anharmonic import (
     AnharmonicUnavailableError, _ElectronicSurfaces, _LEVEL_TOLERANCE, _populations,
 )
-from .cpu import ElectronicConvergenceError
+from .cpu import ElectronicConvergenceError, ReferenceStabilityUnresolvedError, UnstableReferenceError
 from .harmonic import HarmonicSpectrum
 from .state_tracking import StateTrackingError
 
@@ -94,6 +94,8 @@ class DirectOneMode:
             self.diagnostics["energy_evaluations"] += 1
             try:
                 ground, excited, dipole = self.electronic.evaluate(self.origin + coordinate * self.mode)
+            except (ReferenceStabilityUnresolvedError, UnstableReferenceError):
+                raise
             except (ElectronicConvergenceError, StateTrackingError) as error:
                 raise AnharmonicUnavailableError(
                     f"direct one-mode electronic sample failed at Q={coordinate:.5g}: {error}"
@@ -117,6 +119,8 @@ class DirectOneMode:
         # Clip roundoff duplicates across boundaries without adding spline
         # intervals too small for the precision of electronic energies.
         knots = np.array([q for i, q in enumerate(knots) if i == 0 or q - knots[i - 1] > 1e-8])
+        # Fit relative to each surface's own minimum. The corresponding
+        # absolute electronic references are carried through to the photon energies.
         reference = self._sample(np.round(self.centers, 11))[[0, 1], [0, 1]]
         while True:
             values = self._sample(knots)

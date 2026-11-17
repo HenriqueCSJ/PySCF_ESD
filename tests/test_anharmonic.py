@@ -41,6 +41,7 @@ class AnharmonicSpectrumTests(unittest.TestCase):
                     zip(result.final_level, result.final_spectator_quanta[:, 0])]
         self.assertEqual(len(actual), 16)
         np.testing.assert_allclose(actual, expected, rtol=1e-9, atol=1e-11)
+        np.testing.assert_allclose(np.sum(result.transition_dipole_au**2, axis=1), result.dipole_strength_au2)
         np.testing.assert_array_equal(result.population, 1.0)
         self.assertEqual(result.initial_population_coverage, 1.0)
         self.assertAlmostEqual(result.final_dipole_strength_coverage,
@@ -62,6 +63,7 @@ class AnharmonicSpectrumTests(unittest.TestCase):
         np.testing.assert_array_equal(absorption.final_level[a], emission.initial_level[e])
         np.testing.assert_allclose(absorption.photon_energy_hartree[a], emission.photon_energy_hartree[e])
         np.testing.assert_allclose(absorption.dipole_strength_au2[a], emission.dipole_strength_au2[e])
+        np.testing.assert_allclose(absorption.transition_dipole_au[a], emission.transition_dipole_au[e], atol=1e-14)
         self.assertLess(absorption.initial_population_coverage, 1)
         self.assertLess(emission.initial_population_coverage, 1)
 

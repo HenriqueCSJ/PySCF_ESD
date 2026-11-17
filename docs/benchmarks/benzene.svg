@@ -1,0 +1,51 @@
+<?xml version='1.0' encoding='iso-8859-1'?>
+<svg version='1.1' baseProfile='full'
+              xmlns='http://www.w3.org/2000/svg'
+                      xmlns:rdkit='http://www.rdkit.org/xml'
+                      xmlns:xlink='http://www.w3.org/1999/xlink'
+                  xml:space='preserve' role='img' aria-labelledby='molecule-title'
+width='360px' height='190px' viewBox='0 0 360 190'>
+<title id='molecule-title'>Benzene</title>
+<desc>Six-membered aromatic carbon ring.</desc>
+<style>
+@media (prefers-color-scheme: dark) {
+  path[style*='stroke:#303844'] { stroke: #DCE3EA !important; }
+  path[style*='fill:#303844'] { fill: #DCE3EA !important; }
+  path[style*='stroke:#285EAD'] { stroke: #8CB8FF !important; }
+  path[style*='fill:#285EAD'] { fill: #8CB8FF !important; }
+  path[style*='stroke:#B22D3A'] { stroke: #FF9BA5 !important; }
+  path[style*='fill:#B22D3A'] { fill: #FF9BA5 !important; }
+}
+</style>
+<!-- END OF HEADER -->
+<path class='bond-0 atom-0 atom-1' d='M 260.6,94.7 L 220.2,164.7' style='fill:none;fill-rule:evenodd;stroke:#303844;stroke-width:2.0px;stroke-linecap:butt;stroke-linejoin:miter;stroke-opacity:1' />
+<path class='bond-1 atom-1 atom-2' d='M 220.2,164.7 L 139.4,164.7' style='fill:none;fill-rule:evenodd;stroke:#303844;stroke-width:2.0px;stroke-linecap:butt;stroke-linejoin:miter;stroke-opacity:1' />
+<path class='bond-1 atom-1 atom-2' d='M 213.2,152.6 L 146.4,152.6' style='fill:none;fill-rule:evenodd;stroke:#303844;stroke-width:2.0px;stroke-linecap:butt;stroke-linejoin:miter;stroke-opacity:1' />
+<path class='bond-2 atom-2 atom-3' d='M 139.4,164.7 L 99.0,94.7' style='fill:none;fill-rule:evenodd;stroke:#303844;stroke-width:2.0px;stroke-linecap:butt;stroke-linejoin:miter;stroke-opacity:1' />
+<path class='bond-3 atom-3 atom-4' d='M 99.0,94.7 L 139.4,24.7' style='fill:none;fill-rule:evenodd;stroke:#303844;stroke-width:2.0px;stroke-linecap:butt;stroke-linejoin:miter;stroke-opacity:1' />
+<path class='bond-3 atom-3 atom-4' d='M 113.0,94.7 L 146.4,36.8' style='fill:none;fill-rule:evenodd;stroke:#303844;stroke-width:2.0px;stroke-linecap:butt;stroke-linejoin:miter;stroke-opacity:1' />
+<path class='bond-4 atom-4 atom-5' d='M 139.4,24.7 L 220.2,24.7' style='fill:none;fill-rule:evenodd;stroke:#303844;stroke-width:2.0px;stroke-linecap:butt;stroke-linejoin:miter;stroke-opacity:1' />
+<path class='bond-5 atom-5 atom-0' d='M 220.2,24.7 L 260.6,94.7' style='fill:none;fill-rule:evenodd;stroke:#303844;stroke-width:2.0px;stroke-linecap:butt;stroke-linejoin:miter;stroke-opacity:1' />
+<path class='bond-5 atom-5 atom-0' d='M 213.2,36.8 L 246.6,94.7' style='fill:none;fill-rule:evenodd;stroke:#303844;stroke-width:2.0px;stroke-linecap:butt;stroke-linejoin:miter;stroke-opacity:1' />
+<path d='M 258.6,98.2 L 260.6,94.7 L 258.6,91.2' style='fill:none;stroke:#303844;stroke-width:2.0px;stroke-linecap:butt;stroke-linejoin:miter;stroke-miterlimit:10;stroke-opacity:1;' />
+<path d='M 222.2,161.2 L 220.2,164.7 L 216.2,164.7' style='fill:none;stroke:#303844;stroke-width:2.0px;stroke-linecap:butt;stroke-linejoin:miter;stroke-miterlimit:10;stroke-opacity:1;' />
+<path d='M 143.4,164.7 L 139.4,164.7 L 137.4,161.2' style='fill:none;stroke:#303844;stroke-width:2.0px;stroke-linecap:butt;stroke-linejoin:miter;stroke-miterlimit:10;stroke-opacity:1;' />
+<path d='M 101.0,98.2 L 99.0,94.7 L 101.0,91.2' style='fill:none;stroke:#303844;stroke-width:2.0px;stroke-linecap:butt;stroke-linejoin:miter;stroke-miterlimit:10;stroke-opacity:1;' />
+<path d='M 137.4,28.2 L 139.4,24.7 L 143.4,24.7' style='fill:none;stroke:#303844;stroke-width:2.0px;stroke-linecap:butt;stroke-linejoin:miter;stroke-miterlimit:10;stroke-opacity:1;' />
+<path d='M 216.2,24.7 L 220.2,24.7 L 222.2,28.2' style='fill:none;stroke:#303844;stroke-width:2.0px;stroke-linecap:butt;stroke-linejoin:miter;stroke-miterlimit:10;stroke-opacity:1;' />
+<metadata>
+<rdkit:mol xmlns:rdkit = "http://www.rdkit.org/xml" version="0.9">
+<rdkit:atom idx="1" atom-smiles="[cH]" drawing-x="260.6" drawing-y="94.7" x="1.5" y="1.11022e-16" z="0" />
+<rdkit:atom idx="2" atom-smiles="[cH]" drawing-x="220.2" drawing-y="164.7" x="0.75" y="-1.29904" z="0" />
+<rdkit:atom idx="3" atom-smiles="[cH]" drawing-x="139.4" drawing-y="164.7" x="-0.75" y="-1.29904" z="0" />
+<rdkit:atom idx="4" atom-smiles="[cH]" drawing-x="99.0" drawing-y="94.7" x="-1.5" y="2.94719e-16" z="0" />
+<rdkit:atom idx="5" atom-smiles="[cH]" drawing-x="139.4" drawing-y="24.7" x="-0.75" y="1.29904" z="0" />
+<rdkit:atom idx="6" atom-smiles="[cH]" drawing-x="220.2" drawing-y="24.7" x="0.75" y="1.29904" z="0" />
+<rdkit:bond idx="1" begin-atom-idx="1" end-atom-idx="2" bond-smiles=":" />
+<rdkit:bond idx="2" begin-atom-idx="2" end-atom-idx="3" bond-smiles=":" />
+<rdkit:bond idx="3" begin-atom-idx="3" end-atom-idx="4" bond-smiles=":" />
+<rdkit:bond idx="4" begin-atom-idx="4" end-atom-idx="5" bond-smiles=":" />
+<rdkit:bond idx="5" begin-atom-idx="5" end-atom-idx="6" bond-smiles=":" />
+<rdkit:bond idx="6" begin-atom-idx="6" end-atom-idx="1" bond-smiles=":" />
+</rdkit:mol></metadata>
+</svg>

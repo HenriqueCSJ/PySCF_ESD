@@ -23,6 +23,13 @@ class IntegralValues:
     enuc: float
 
 
+@dataclass(frozen=True)
+class OneElectronValues:
+    overlap: NDArray[np.float64]
+    hcore: NDArray[np.float64]
+    enuc: float
+
+
 def _all_eri_centers(contribution):
     """Sum a canonical first-center term over all four ERI centers."""
     bra = contribution + contribution.transpose(1, 0, 2, 3)
@@ -64,14 +71,19 @@ class IntegralDerivativeEngine:
         self._pair_inverse_fifth = products / distances**5
 
     @cached_property
-    def base(self) -> IntegralValues:
-        """Undifferentiated integral values at the reference geometry."""
-        return IntegralValues(
+    def one_electron(self) -> OneElectronValues:
+        """Reference one-electron integrals and nuclear repulsion."""
+        return OneElectronValues(
             self._mol.intor("int1e_ovlp"),
             self._mol.intor("int1e_kin") + self._mol.intor("int1e_nuc"),
-            self._mol.intor("int2e", aosym="s1"),
             float(self._mol.energy_nuc()),
         )
+
+    @cached_property
+    def base(self) -> IntegralValues:
+        """Undifferentiated integral values at the reference geometry."""
+        one = self.one_electron
+        return IntegralValues(one.overlap, one.hcore, self._mol.intor("int2e", aosym="s1"), one.enuc)
 
     @cached_property
     def _first_one_electron(self):
@@ -119,8 +131,8 @@ class IntegralDerivativeEngine:
         pairs = displacement[self._pair_a] - displacement[self._pair_b]
         return displacement, ao, pairs
 
-    def first(self, direction: ArrayLike) -> IntegralValues:
-        """Return the derivative along one nuclear displacement."""
+    def first_one_electron(self, direction: ArrayLike) -> OneElectronValues:
+        """Return analytic one-electron derivatives without building any ERIs."""
         nuclear, ao, pairs = self._direction(direction)
         overlap_kernel, kinetic_kernel, nuclear_kernels = self._first_one_electron
 
@@ -137,12 +149,18 @@ class IntegralDerivativeEngine:
             contribution = np.einsum("xp,xpq->pq", ao - nuclear[atom, :, None], kernel)
             hcore += self._charges[atom] * (contribution + contribution.T)
 
-        eri_first = -np.einsum("xp,xpqrs->pqrs", ao, self._first_eri)
         enuc = -np.einsum("a,ax,ax->", self._pair_inverse_cubed, self._pair_vectors, pairs)
-        return IntegralValues(overlap, hcore, _all_eri_centers(eri_first), float(enuc))
+        return OneElectronValues(overlap, hcore, float(enuc))
 
-    def second(self, left: ArrayLike, right: ArrayLike) -> IntegralValues:
-        """Return the mixed derivative along two nuclear displacements."""
+    def first(self, direction: ArrayLike) -> IntegralValues:
+        """Return the derivative along one nuclear displacement."""
+        one = self.first_one_electron(direction)
+        _, ao, _ = self._direction(direction)
+        eri_first = -np.einsum("xp,xpqrs->pqrs", ao, self._first_eri)
+        return IntegralValues(one.overlap, one.hcore, _all_eri_centers(eri_first), one.enuc)
+
+    def second_one_electron(self, left: ArrayLike, right: ArrayLike) -> OneElectronValues:
+        """Return mixed one-electron derivatives without building any ERIs."""
         left_nuclear, left_ao, left_pairs = self._direction(left)
         right_nuclear, right_ao, right_pairs = self._direction(right)
         overlap_kernel, kinetic_kernel, nuclear_kernels = self._second_one_electron
@@ -159,6 +177,17 @@ class IntegralDerivativeEngine:
             contribution += np.einsum("xp,yq,xypq->pq", relative_left, relative_right, different)
             hcore -= self._charges[atom] * (contribution + contribution.T)
 
+        enuc = 3 * np.einsum(
+            "a,ax,ax,ay,ay->", self._pair_inverse_fifth,
+            self._pair_vectors, left_pairs, self._pair_vectors, right_pairs,
+        ) - np.einsum("a,ax,ax->", self._pair_inverse_cubed, left_pairs, right_pairs)
+        return OneElectronValues(overlap, hcore, float(enuc))
+
+    def second(self, left: ArrayLike, right: ArrayLike) -> IntegralValues:
+        """Return the mixed derivative along two nuclear displacements."""
+        one = self.second_one_electron(left, right)
+        _, left_ao, _ = self._direction(left)
+        _, right_ao, _ = self._direction(right)
         same, same_pair, opposite_pair = self._second_eri
         diagonal = np.einsum("xp,yp,xypqrs->pqrs", left_ao, right_ao, same)
         within = np.einsum("xp,yq,xypqrs->pqrs", left_ao, right_ao, same_pair)
@@ -173,11 +202,7 @@ class IntegralDerivativeEngine:
         across = across + across.transpose(1, 0, 2, 3)
         eri += across + across.transpose(0, 1, 3, 2)
 
-        enuc = 3 * np.einsum(
-            "a,ax,ax,ay,ay->", self._pair_inverse_fifth,
-            self._pair_vectors, left_pairs, self._pair_vectors, right_pairs,
-        ) - np.einsum("a,ax,ax->", self._pair_inverse_cubed, left_pairs, right_pairs)
-        return IntegralValues(overlap, hcore, eri, float(enuc))
+        return IntegralValues(one.overlap, one.hcore, eri, one.enuc)
 
 
 def integral_derivatives(

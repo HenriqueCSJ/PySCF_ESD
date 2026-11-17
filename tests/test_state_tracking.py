@@ -4,7 +4,7 @@ import unittest
 
 import numpy as np
 
-from pyscf_esd.state_tracking import StateTrackingError, orbital_overlap_blocks, track_state
+from pyscf_esd.state_tracking import StateTrackingError, match_state_overlaps, orbital_overlap_blocks, track_state
 
 
 class StateTrackingTests(unittest.TestCase):
@@ -103,6 +103,20 @@ class StateTrackingTests(unittest.TestCase):
         self.assertEqual((result.index, result.phase), (0, -1))
         self.assertIsNone(result.margin)
         self.assertIsNone(result.gap_hartree)
+
+    def test_backend_scores_use_the_same_sign_and_gap_policy(self):
+        scores = np.array([-0.87, 0.04, 0.31])
+        energies = [-8.1, -8.3, -8.09999]
+        match = match_state_overlaps(scores, candidate_energies_hartree=energies)
+        self.assertEqual((match.index, match.phase), (0, -1))
+        self.assertAlmostEqual(match.margin, 0.56)
+        self.assertAlmostEqual(match.gap_hartree, 1e-5)
+        self.assertFalse(match.overlaps.flags.writeable)
+        self.assertTrue(scores.flags.writeable)
+        with self.assertRaisesRegex(StateTrackingError, "near-degenerate"):
+            match_state_overlaps(scores, candidate_energies_hartree=energies, minimum_gap_hartree=1e-4)
+        with self.assertRaisesRegex(ValueError, "valid normalized scores"):
+            match_state_overlaps([1.01, 0.04])
 
 
 if __name__ == "__main__":

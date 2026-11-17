@@ -1,4 +1,4 @@
-"""Track real restricted TDA states by particle–hole transition densities."""
+"""Match real electronic states using signed, normalized overlaps."""
 
 from dataclasses import dataclass
 from math import isfinite
@@ -108,6 +108,49 @@ def track_state(
     nroot, nocc, nvir = candidates.shape
     if occ.shape != (reference.shape[0], nocc) or vir.shape != (reference.shape[1], nvir):
         raise ValueError("the MO overlap blocks do not match the X occupied and virtual dimensions")
+    reference_norm = np.linalg.norm(reference)
+    candidate_norms = np.linalg.norm(candidates, axis=(1, 2))
+    if (
+        reference_norm == 0.0 or not np.isfinite(reference_norm)
+        or np.any(candidate_norms == 0.0) or not np.all(np.isfinite(candidate_norms))
+    ):
+        raise ValueError("X amplitudes must have finite nonzero Frobenius norms")
+    # Use both original norms. Renormalizing the projection would hide
+    # state character lost from the candidate MO subspaces.
+    transported = occ.T @ (reference / reference_norm) @ vir
+    overlaps = np.einsum("ia,kia->k", transported, candidates / candidate_norms[:, None, None])
+    if not np.all(np.isfinite(overlaps)) or np.any(np.abs(overlaps) > 1.0 + 1e-8):
+        raise ValueError("the supplied orbital overlaps produce invalid normalized scores")
+    return match_state_overlaps(
+        overlaps, candidate_energies_hartree=candidate_energies_hartree,
+        minimum_overlap=minimum_overlap, minimum_margin=minimum_margin,
+        minimum_gap_hartree=minimum_gap_hartree,
+    )
+
+
+def match_state_overlaps(
+    signed_overlaps: ArrayLike,
+    *,
+    candidate_energies_hartree: ArrayLike | None = None,
+    minimum_overlap: float = 0.65,
+    minimum_margin: float = 0.10,
+    minimum_gap_hartree: float = 0.0,
+) -> StateMatch:
+    """Resolve an isolated real state from backend-supplied signed overlaps.
+
+    The scores are relative to the original normalized states or their
+    tracking metric. Their magnitudes retain any loss upon transport. Use
+    one energy and score per candidate in the same order. When a backend
+    chooses a different metric, calibrate the overlap and margin thresholds
+    for that metric. A caller tracking a transition between two states must
+    apply the product of the two selected phases to its raw transition dipole.
+    """
+    overlaps = _real_array(signed_overlaps, 1, "signed_overlaps")
+    nroot = len(overlaps)
+    if not nroot:
+        raise ValueError("at least one candidate is required")
+    if np.any(np.abs(overlaps) > 1.0 + 1e-8):
+        raise ValueError("signed_overlaps must contain valid normalized scores")
     for name, threshold, upper in (
         ("minimum_overlap", minimum_overlap, 1.0),
         ("minimum_margin", minimum_margin, 1.0),
@@ -121,21 +164,10 @@ def track_state(
     if candidate_energies_hartree is not None:
         energies = _real_array(candidate_energies_hartree, 1, "candidate_energies_hartree")
         if energies.shape != (nroot,):
-            raise ValueError("one excitation energy is required per candidate")
+            raise ValueError("one candidate energy is required per overlap")
     elif minimum_gap_hartree > 0.0:
         raise ValueError("candidate energies are required for a positive gap threshold")
 
-    reference_norm = np.linalg.norm(reference)
-    candidate_norms = np.linalg.norm(candidates, axis=(1, 2))
-    if (
-        reference_norm == 0.0 or not np.isfinite(reference_norm)
-        or np.any(candidate_norms == 0.0) or not np.all(np.isfinite(candidate_norms))
-    ):
-        raise ValueError("X amplitudes must have finite nonzero Frobenius norms")
-    transported = occ.T @ (reference / reference_norm) @ vir
-    overlaps = np.einsum("ia,kia->k", transported, candidates / candidate_norms[:, None, None])
-    if not np.all(np.isfinite(overlaps)) or np.any(np.abs(overlaps) > 1.0 + 1e-8):
-        raise ValueError("the supplied orbital overlaps produce invalid normalized scores")
     overlaps = np.clip(overlaps, -1.0, 1.0)
     overlaps.setflags(write=False)
     scores = np.abs(overlaps)

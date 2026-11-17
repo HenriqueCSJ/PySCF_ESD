@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections import OrderedDict
+from collections import Counter, OrderedDict
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field, replace
 from numbers import Integral
@@ -12,11 +12,13 @@ from numpy.typing import ArrayLike, NDArray
 
 from .cis_hessian import analytic_cis_hessian, analytic_cis_transition_dipole
 from .cpu import (
-    ElectronicConvergenceError, ElectronicPoint, OrbitalSeed, Settings,
-    _checked_array, _scf_residual, _solve_reference, build_molecule, solve_point,
+    ElectronicConvergenceError, ElectronicPoint, OrbitalSeed, ReferenceStabilityUnresolvedError, Settings,
+    UnstableReferenceError,
+    _checked_array, _scf_residual, _solve_reference, build_molecule, check_restricted_reference, solve_point,
 )
 from .pyscf_adapter import AdiabaticHessianParameters, adiabatic_hessian
 from .state_tracking import StateTrackingError, orbital_overlap_blocks, track_state
+from .vibronic_properties import electronic_relaxation_properties, harmonic_model_properties
 
 
 _Real = NDArray[np.float64]
@@ -24,6 +26,8 @@ _STATIONARY_TOLERANCE = 1e-5  # Maximum per-atom gradient, Hartree/bohr
 _ROOT_GAP = 1e-4  # Hartree
 _SUBSPACE_LOSS_LIMIT = 0.10
 _CACHE_SIZE = 64  # Native PySCF objects can retain large integral and grid arrays
+_DIPOLE_ABSOLUTE_TOLERANCE_AU = 2e-6
+_DIPOLE_RELATIVE_TOLERANCE = 0.065
 
 
 @dataclass(frozen=True)
@@ -241,6 +245,7 @@ class _ElectronicSession:
 
     @staticmethod
     def _match(previous: _TrackedPoint, candidate: ElectronicPoint):
+        """Match a new eigenvector against the phase carried by the previous point."""
         from pyscf import gto
 
         reference = previous.point
@@ -259,7 +264,12 @@ class _ElectronicSession:
             minimum_gap_hartree=_ROOT_GAP if multiple else 0,
         )
 
-    def tracked(self, coordinates: _Real, previous: _TrackedPoint | None = None) -> _TrackedPoint:
+    def isolated_point(self, coordinates: _Real, previous: _TrackedPoint) -> _TrackedPoint:
+        return self.tracked(coordinates, previous, preserve_rank=True)
+
+    def tracked(
+        self, coordinates: _Real, previous: _TrackedPoint | None = None, *, preserve_rank: bool = False,
+    ) -> _TrackedPoint:
         key = coordinates.tobytes()
         known = self.tracked_cache.get(key)
         if known is None:
@@ -267,6 +277,8 @@ class _ElectronicSession:
         if known is not None:
             if previous is not None and previous is not known:
                 match = self._match(previous, known.point)
+                if preserve_rank and match.index != previous.root:
+                    raise StateTrackingError("trial geometry changes the energy rank of the isolated target state")
                 if (match.index, match.phase) != (known.root, known.phase):
                     raise StateTrackingError(
                         "independent paths to a cached geometry disagree on the target state or its phase"
@@ -289,6 +301,12 @@ class _ElectronicSession:
                 if count == self.root_search_limit or "insufficient overlap" not in str(error):
                     raise
             else:
+                # A continuous isolated adiabatic eigenvalue keeps its
+                # energy rank. Endpoint overlap alone can jump branches.
+                if preserve_rank and match.index != previous.root:
+                    raise StateTrackingError("trial geometry changes the energy rank of the isolated target state")
+                # A match at the last computed root leaves the gap to the
+                # next higher root untested unless the full space was solved.
                 if match.index < count - 1 or count == self.root_dimension:
                     break
                 if count == self.root_search_limit:
@@ -309,19 +327,19 @@ class _ElectronicSession:
         candidates = tuple(self.tracked_cache.values()) + tuple(self.anchors)
         previous = min(candidates, key=lambda saved: float(np.sum((values - saved.coordinates) ** 2)))
         origin = previous.coordinates
+        # Transport the target through nearby geometries when a scan jumps
+        # farther than one tracking step from the nearest saved point.
         segments = max(1, int(np.ceil(_maximum_motion(values - origin) / 0.20)))
         for fraction in np.arange(1, segments, dtype=float) / segments:
-            previous = self.tracked(origin + fraction * (values - origin), previous)
-        point = self.tracked(values, previous)
+            previous = self.isolated_point(origin + fraction * (values - origin), previous)
+        point = self.isolated_point(values, previous)
         return point.point.ground_energy_hartree, point.energy, point.dipole
 
-    def stability(self, ground: _GroundPoint) -> None:
-        _, _, internal, external = ground.mean_field.stability(internal=True, external=True, return_status=True)
-        if not (internal and external):
-            raise ElectronicConvergenceError(
-                "the optimized S0 reference failed the restricted determinant stability check. "
-                "Choose an electronic method appropriate to an unstable closed-shell reference."
-            )
+    def ground_stability(self, ground: _GroundPoint) -> None:
+        check_restricted_reference(ground.mean_field, "Reference at an S0 stationary geometry")
+
+    def excited_stability(self, excited: _TrackedPoint) -> None:
+        check_restricted_reference(excited.point._mean_field, "Reference at a tracked S1 stationary geometry")
 
     def _conventional_rhf(self, point: _TrackedPoint):
         native = point.point._mean_field
@@ -417,22 +435,38 @@ def _fit_symmetric_curvature(displacements: _Real, gradients: _Real) -> _Real:
     return axes @ (rhs / (singular[:, None] + singular[None, :])) @ axes.T
 
 
+def _raise_repeated_reference_failure(failures) -> None:
+    # A failed stability computation cannot establish a physical instability.
+    unresolved = next(
+        (error for error in reversed(failures) if isinstance(error, ReferenceStabilityUnresolvedError)), None,
+    )
+    if unresolved is not None:
+        raise unresolved
+    if not failures or not all(isinstance(error, UnstableReferenceError) for error in failures):
+        return
+    if all(error.channel == failures[0].channel for error in failures):
+        raise failures[-1]
+
+
 def _estimate_curvature(session: _ElectronicSession, center: _TrackedPoint) -> tuple[_Real, dict]:
+    """Fit vibrational curvature to analytic gradients and check direct energies."""
     frame = _cartesian_frame(center.coordinates)
     gradient = center.total_gradient().ravel() @ frame
     generator = np.random.default_rng(57301)
     fit, holdout = _design(frame.shape[1], generator)
     failure = ""
+    rejected = []
     for radius in (0.048, 0.030, 0.018):
         x = _physical_scale(np.vstack((fit, holdout)), frame, radius)
         try:
             samples = [
-                session.tracked(center.coordinates + (frame @ row).reshape(center.coordinates.shape), center)
+                session.isolated_point(center.coordinates + (frame @ row).reshape(center.coordinates.shape), center)
                 for row in x
             ]
             gradients = np.stack([sample.total_gradient().ravel() @ frame for sample in samples])
         except (StateTrackingError, ElectronicConvergenceError) as error:
             failure = str(error)
+            rejected.append(error)
             continue
         split = len(fit)
         hessian = _fit_symmetric_curvature(x[:split], gradients[:split] - gradient)
@@ -456,7 +490,9 @@ def _estimate_curvature(session: _ElectronicSession, center: _TrackedPoint) -> t
         }
         if gradient_error <= gradient_limit and energy_error <= energy_limit:
             return _atomic_hessian(frame @ hessian @ frame.T), diagnostics
+        rejected.append(None)
         failure = f"Gradient RMSE {gradient_error:.3g} Hartree/bohr, energy RMSE {energy_error:.3g} Hartree"
+    _raise_repeated_reference_failure(rejected)
     raise ElectronicConvergenceError(
         f"S1 local curvature could not be validated against independent gradients and direct energies. {failure}. "
         "Check electronic convergence, grid resolution, and local state isolation."
@@ -464,20 +500,23 @@ def _estimate_curvature(session: _ElectronicSession, center: _TrackedPoint) -> t
 
 
 def _estimate_dipole(session: _ElectronicSession, center: _TrackedPoint, modes: _Real) -> tuple[_Real, dict]:
+    """Fit the phase-aligned dipole slope in ground normal coordinates."""
     scales = np.max(np.linalg.norm(modes, axis=2), axis=1)
     frame = (modes.reshape(len(modes), -1) / scales[:, None]).T
     generator = np.random.default_rng(7951)
     fit, holdout = _design(frame.shape[1], generator)
     failure = ""
+    rejected = []
     for radius in (0.046, 0.028, 0.017):
         x = _physical_scale(np.vstack((fit, holdout)), frame, radius)
         try:
             shifts = np.stack([
-                session.tracked(center.coordinates + (frame @ row).reshape(center.coordinates.shape), center).dipole
+                session.isolated_point(center.coordinates + (frame @ row).reshape(center.coordinates.shape), center).dipole
                 - center.dipole for row in x
             ])
         except (StateTrackingError, ElectronicConvergenceError) as error:
             failure = str(error)
+            rejected.append(error)
             continue
         split = len(fit)
         slope, _, rank, _ = np.linalg.lstsq(x[:split], shifts[:split], rcond=None)
@@ -485,8 +524,12 @@ def _estimate_dipole(session: _ElectronicSession, center: _TrackedPoint, modes: 
             raise ElectronicConvergenceError("the mixed-displacement HT design is rank-deficient")
         mismatch = shifts[split:] - x[split:] @ slope
         error = float(np.sqrt(np.mean(mismatch**2)))
-        limit = 2e-6 + 0.065 * float(np.sqrt(np.mean(shifts[split:]**2)))
+        limit = _DIPOLE_ABSOLUTE_TOLERANCE_AU + _DIPOLE_RELATIVE_TOLERANCE * float(
+            np.sqrt(np.mean(shifts[split:]**2))
+        )
         if error <= limit:
+            # The regression columns used dR/dQ divided by scales.
+            # Restore the derivative with respect to Q.
             return scales[:, None] * slope, {
                 "route": "local_phase_aligned_dipole_regression",
                 "fit_points": split,
@@ -496,75 +539,159 @@ def _estimate_dipole(session: _ElectronicSession, center: _TrackedPoint, modes: 
                 "holdout_dipole_limit_au": limit,
             }
         failure = f"holdout dipole RMSE {error:.3g} e·bohr"
+        rejected.append(None)
+    _raise_repeated_reference_failure(rejected)
     raise ElectronicConvergenceError(
         f"local HT regression could not be validated against independent dipoles ({failure}). "
         "Check the electronic convergence and isolation of the target state."
     )
 
 
+def _check_ht_zero_point(session, center, modes, frequencies, derivatives) -> dict:
+    """Check the dominant HT mode when its vibrational quantum spans an electronic gap."""
+    if not frequencies.size:
+        return {"status": "not_triggered"}
+    excitation = center.point.excitation_energies_hartree
+    neighbors = np.delete(excitation, center.root)
+    gap = float(np.min(abs(neighbors - excitation[center.root]), initial=np.inf))
+    amplitude = 1.0 / np.sqrt(2.0 * frequencies)
+    dipole_changes = amplitude[:, None] * derivatives
+    mode = int(np.argmax(np.linalg.norm(dipole_changes, axis=1)))
+    if gap > frequencies[mode] or np.linalg.norm(dipole_changes[mode]) < _DIPOLE_ABSOLUTE_TOLERANCE_AU:
+        return {"status": "not_triggered"}
+
+    step = amplitude[mode] * modes[mode]
+    slope = dipole_changes[mode]
+    observed = np.stack([
+        session.isolated_point(center.coordinates + sign * step, center).dipole - center.dipole
+        for sign in (-1, 1)
+    ])
+    error = float(np.max(np.linalg.norm(observed - np.stack((-slope, slope)), axis=1)))
+    scale = float(np.max(np.linalg.norm(observed, axis=1)))
+    limit = _DIPOLE_ABSOLUTE_TOLERANCE_AU + _DIPOLE_RELATIVE_TOLERANCE * scale
+    if error > limit:
+        raise ElectronicConvergenceError(
+            f"linear HT fails the zero-point displacement check for mode {mode + 1} "
+            f"(dipole error {error:.3g} e·bohr, limit {limit:.3g} e·bohr, "
+            f"neighboring root gap {gap:.3g} Hartree). A coordinate-dependent dipole or "
+            "coupled electronic states are needed to qualify the spectrum and radiative rate."
+        )
+    return {"status": "passed", "ground_mode_index": mode, "electronic_gap_hartree": gap,
+            "max_dipole_error_au": error, "dipole_error_limit_au": limit}
+
+
 def _gradient(point: _GroundPoint | _TrackedPoint) -> _Real:
     return point.gradient if isinstance(point, _GroundPoint) else point.total_gradient()
 
 
-def _optimize(evaluate, initial, masses: _Real, state: str):
-    """Safeguarded Cartesian BFGS using direct energies and analytic gradients."""
+def _inverse_hessian_guess(frame: _Real, initial_hessian: _Real) -> _Real:
+    stiffness, modes = np.linalg.eigh(frame.T @ _matrix_hessian(initial_hessian) @ frame)
+    # Limit the conditioning of a borrowed Hessian so soft modes cannot
+    # overwhelm its step. Its rigid-motion complement retains unit scale.
+    floor = max(1e-8, 1e-3 * float(np.max(np.abs(stiffness))))
+    modes = frame @ modes
+    return np.eye(frame.shape[0]) + (modes * (1 / np.maximum(stiffness, floor) - 1)) @ modes.T
+
+
+def _optimize(evaluate, initial, masses: _Real, state: str, *, initial_hessian: _Real | None = None):
+    """Projected Cartesian BFGS using direct energies and analytic gradients."""
     point = initial
-    size = point.coordinates.size
-    inverse_hessian = np.eye(size)
-    for cycle in range(1, 121):
+    inverse_hessian = np.eye(point.coordinates.size)
+    counts = Counter(
+        bfgs_iterations=0,
+        optimization_trial_evaluations=0,
+        optimization_energy_rejections=0,
+        optimization_electronic_rejections=0,
+        optimization_steepest_descent_restarts=0,
+    )
+    for cycle in range(121):
         raw_gradient = _gradient(point)
-        if _maximum_motion(raw_gradient) <= 0.5 * _STATIONARY_TOLERANCE:
-            return point, cycle - 1
-        frame = _cartesian_frame(point.coordinates)
-        gradient = frame @ (frame.T @ raw_gradient.ravel())
-        direction = -frame @ (frame.T @ (inverse_hessian @ gradient))
-        direction /= max(1., _maximum_motion(direction) / 0.22)
-        slope = float(gradient @ direction)
-        last_error = None
-        for power in range(16):
-            fraction = 0.5**power
-            proposal = _align(point.coordinates + fraction * direction.reshape(raw_gradient.shape), point.coordinates, masses)
-            try:
-                candidate = evaluate(proposal, point)
-                if candidate.energy > point.energy + 1e-4 * fraction * slope + 2e-11:
-                    continue
-                candidate_gradient = _gradient(candidate).ravel()
-            except (ElectronicConvergenceError, StateTrackingError) as error:
-                last_error = error
-                continue
+        maximum_gradient = _maximum_motion(raw_gradient)
+        if maximum_gradient <= 0.5 * _STATIONARY_TOLERANCE:
+            return point, counts
+        if cycle == 120:
             break
-        else:
-            if _maximum_motion(raw_gradient) <= _STATIONARY_TOLERANCE:
-                return point, cycle - 1
+        frame = _cartesian_frame(point.coordinates)
+        if cycle == 0 and initial_hessian is not None:
+            inverse_hessian = _inverse_hessian_guess(frame, initial_hessian)
+        gradient = frame @ (frame.T @ raw_gradient.ravel())
+        quasi_newton = -frame @ (frame.T @ (inverse_hessian @ gradient))
+        steepest = -gradient
+        quasi_newton /= max(1., _maximum_motion(quasi_newton) / 0.22)
+        steepest /= max(1., _maximum_motion(steepest) / 0.22)
+        last_error = None
+        rejected = []
+        accepted = None
+        for attempt, direction in enumerate((quasi_newton, steepest)):
+            if attempt:
+                if np.allclose(direction, quasi_newton, atol=1e-14, rtol=1e-12):
+                    break
+                counts["optimization_steepest_descent_restarts"] += 1
+                inverse_hessian = np.eye(point.coordinates.size)
+            if not float(gradient @ direction) < 0:
+                continue
+            for power in range(16):
+                trial = point.coordinates + 0.5**power * direction.reshape(raw_gradient.shape)
+                proposal = _align(trial, point.coordinates, masses)
+                # Use the realized displacement after re-alignment in
+                # the Armijo energy test.
+                slope = float(gradient @ (proposal - point.coordinates).ravel())
+                if slope >= 0:
+                    continue
+                counts["optimization_trial_evaluations"] += 1
+                try:
+                    candidate = evaluate(proposal, point)
+                    if not candidate.energy <= point.energy + 1e-4 * slope + 2e-11:
+                        counts["optimization_energy_rejections"] += 1
+                        rejected.append(None)
+                        continue
+                    candidate_gradient = _gradient(candidate).ravel()
+                except (ElectronicConvergenceError, StateTrackingError) as error:
+                    last_error = error
+                    rejected.append(error)
+                    counts["optimization_electronic_rejections"] += 1
+                    continue
+                accepted = candidate, candidate_gradient
+                break
+            if accepted is not None:
+                break
+        if accepted is None:
+            if maximum_gradient <= _STATIONARY_TOLERANCE:
+                return point, counts
+            _raise_repeated_reference_failure(rejected)
             detail = "" if last_error is None else f" Last electronic failure: {last_error}"
             raise ElectronicConvergenceError(
-                f"{state} optimization could not find a tracked downhill step after {cycle} iterations "
-                f"(maximum gradient {_maximum_motion(raw_gradient):.3g} Hartree/bohr).{detail}"
+                f"{state} optimization could not find a tracked downhill step at iteration {cycle + 1} "
+                f"(maximum gradient {maximum_gradient:.3g} Hartree/bohr).{detail}"
             )
-        step = (candidate.coordinates - point.coordinates).ravel()
-        gradient_change = candidate_gradient - raw_gradient.ravel()
+        candidate, candidate_gradient = accepted
+        step = frame @ (frame.T @ (candidate.coordinates - point.coordinates).ravel())
+        gradient_change = frame @ (frame.T @ (candidate_gradient - raw_gradient.ravel()))
         curvature = float(step @ gradient_change)
-        if curvature > 1e-12 * np.linalg.norm(step) * np.linalg.norm(gradient_change):
+        if curvature > np.sqrt(np.finfo(float).eps) * np.linalg.norm(step) * np.linalg.norm(gradient_change):
             transformed = inverse_hessian @ gradient_change
             inverse_hessian += (
                 (1 + float(gradient_change @ transformed) / curvature) * np.outer(step, step)
                 - np.outer(step, transformed) - np.outer(transformed, step)
             ) / curvature
         point = candidate
+        counts["bfgs_iterations"] += 1
     raise ElectronicConvergenceError(
         f"{state} geometry did not converge within 120 analytic-gradient iterations "
-        f"(maximum gradient {_maximum_motion(_gradient(point)):.3g} Hartree/bohr)"
+        f"(maximum gradient {maximum_gradient:.3g} Hartree/bohr)"
     )
 
 
-def _find_minima(evaluate, raw_hessian, initial, masses: _Real, state: str):
+def _find_minima(
+    evaluate, raw_hessian, initial, masses: _Real, state: str, *,
+    qualify_stationary, initial_hessian: _Real | None = None,
+):
     checked = []
-    total_steps = 0
+    optimization_counts = Counter()
 
     def descend(seed, depth):
-        nonlocal total_steps
-        point, steps = _optimize(evaluate, seed, masses, state)
-        total_steps += steps
+        point, counts = _optimize(evaluate, seed, masses, state, initial_hessian=initial_hessian if depth == 0 else None)
+        optimization_counts.update(counts)
         linear = _linear_candidate(point.coordinates, masses)
         if linear is not None:
             linear_point = evaluate(linear, point)
@@ -575,6 +702,9 @@ def _find_minima(evaluate, raw_hessian, initial, masses: _Real, state: str):
             if residual < 2e-4:
                 return []
         checked.append(point)
+        # An unstable determinant can invalidate the curvature response
+        # before the workflow otherwise gets a chance to retry the reference.
+        qualify_stationary(point)
         hessian = raw_hessian(point)
         frame = _cartesian_frame(point.coordinates)
         eigenvalues, directions = np.linalg.eigh(frame.T @ _matrix_hessian(hessian) @ frame)
@@ -587,22 +717,28 @@ def _find_minima(evaluate, raw_hessian, initial, masses: _Real, state: str):
             )
         if depth == 3:
             raise ElectronicConvergenceError(f"{state} relaxed to a saddle after three unstable-mode descents")
+        # Follow both signs of the most negative internal mode. A broken
+        # symmetry can yield distinct local minima from the same saddle.
         direction = (frame @ directions[:, 0]).reshape(point.coordinates.shape)
         direction /= _maximum_motion(direction)
         minima = []
         for sign in (-1, 1):
             last_error = None
+            rejected = []
             for displacement in (0.20, 0.10, 0.05, 0.025):
                 trial = point.coordinates + sign * displacement * direction
                 try:
                     branch = evaluate(_align(trial, point.coordinates, masses), point)
                 except (ElectronicConvergenceError, StateTrackingError) as error:
                     last_error = error
+                    rejected.append(error)
                     continue
                 if branch.energy < point.energy - 2e-10:
                     minima.extend(descend(branch, depth + 1))
                     break
+                rejected.append(None)
             else:
+                _raise_repeated_reference_failure(rejected)
                 detail = "" if last_error is None else f" Last electronic failure: {last_error}"
                 raise ElectronicConvergenceError(
                     f"{state} stationary point has negative curvature but a downhill branch could not be followed.{detail}"
@@ -616,15 +752,17 @@ def _find_minima(evaluate, raw_hessian, initial, masses: _Real, state: str):
     return minima, {
         "checked_stationary_geometries": len(checked),
         "local_minima_found": len(minima),
-        "bfgs_iterations": total_steps,
+        "inverse_hessian_initialization": "identity" if initial_hessian is None else "ground_state_hessian",
+        **optimization_counts,
     }
 
 
 def _prepare_ground(session: _ElectronicSession):
     initial = session.ground(session.initial_coordinates)
-    minima, diagnostics = _find_minima(session.ground, session.ground_hessian, initial, session.masses, "S0")
-    session.stability(minima[0][0])
-    return minima, diagnostics
+    return _find_minima(
+        session.ground, session.ground_hessian, initial, session.masses, "S0",
+        qualify_stationary=session.ground_stability,
+    )
 
 
 def optimize_ground(symbols: Sequence[str], coordinates_bohr: ArrayLike, settings: Settings) -> _Real:
@@ -659,12 +797,10 @@ def prepare_electronic(
     if abs(tracker.point.ground_energy_hartree - ground.energy) > 1e-8:
         raise ElectronicConvergenceError("the S0 and TDA preprocessing converged to different ground references")
     exciteds, excited_diagnostics = _find_minima(
-        session.tracked, session.excited_hessian, tracker, session.masses, "S1",
+        session.isolated_point, session.excited_hessian, tracker, session.masses, "S1",
+        qualify_stationary=session.excited_stability, initial_hessian=ground_hessian,
     )
     excited, excited_hessian = exciteds[0]
-    internal, external = excited.point.reference_stability()
-    if not internal:
-        raise ElectronicConvergenceError("the optimized S1 reference failed the internal restricted determinant stability check")
     session.anchors.extend(point for point, _ in exciteds)
     if _cartesian_frame(ground.coordinates).shape[1] != _cartesian_frame(excited.coordinates).shape[1]:
         raise ElectronicConvergenceError(
@@ -682,7 +818,7 @@ def prepare_electronic(
         raise ElectronicConvergenceError(f"the two stationary minima do not qualify for an AH model: {error}") from error
     aligned_excited = excited.coordinates @ model.excited_alignment_rotation + model.excited_alignment_translation_bohr
     if _maximum_motion(aligned_excited - excited.coordinates) > 1e-8:
-        aligned_point = session.tracked(aligned_excited, excited)
+        aligned_point = session.isolated_point(aligned_excited, excited)
         if abs(aligned_point.energy - excited.energy) > 1e-7:
             raise ElectronicConvergenceError("realigning the excited minimum changed its tracked electronic energy")
         session.anchors.append(aligned_point)
@@ -690,7 +826,11 @@ def prepare_electronic(
         derivatives = None
         dipole_diagnostics = {"route": "direct_coordinate_dependent"}
     else:
-        derivatives, dipole_diagnostics = session.dipole_derivatives(tracker, model.ground_cartesian_mode_derivatives_au)
+        modes = model.ground_cartesian_mode_derivatives_au
+        derivatives, dipole_diagnostics = session.dipole_derivatives(tracker, modes)
+        dipole_diagnostics["zero_point_linearity"] = _check_ht_zero_point(
+            session, tracker, modes, model.ground_frequencies_hartree, derivatives,
+        )
     return ElectronicPreparation(
         ground_coordinates_bohr=ground.coordinates.copy(),
         excited_coordinates_bohr=aligned_excited,
@@ -701,10 +841,23 @@ def prepare_electronic(
         diagnostics={
             "ground_optimization": ground_diagnostics,
             "excited_optimization": excited_diagnostics,
+            "electronic_relaxation": electronic_relaxation_properties(
+                ground_at_ground_hartree=ground.energy,
+                ground_at_excited_hartree=excited.point.ground_energy_hartree,
+                excited_at_ground_hartree=tracker.energy,
+                excited_at_excited_hartree=excited.energy,
+                transition_dipole_at_ground_au=tracker.dipole,
+                transition_dipole_at_excited_au=excited.dipole,
+            ),
+            "harmonic_reference": harmonic_model_properties(
+                model, dipole_derivatives_au=derivatives,
+                transition_dipole_at_ground_au=tracker.dipole,
+                direct_transition_dipole_at_excited_au=excited.dipole @ model.excited_alignment_rotation,
+            ),
             "ground_hessian": {"route": "analytic_pyscf_rks", "quadrature_grid_response": False},
             "excited_gradient_quadrature_grid_response": False,
-            "excited_reference_internal_stability": internal,
-            "excited_reference_external_stability": external,
+            "excited_reference_internal_stability": True,
+            "excited_reference_external_stability": True,
             "excited_hessian": excited.curvature_diagnostics,
             "ht": dipole_diagnostics,
             "ground_scf_solves": session.ground_solves,

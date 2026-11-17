@@ -109,6 +109,8 @@ class AdiabaticHessianParameters:
             rotation = self.rotation.T
             shift = -(rotation @ self.shift_au)
             if derivatives is not None:
+                # Evaluating Q0 = J.T @ Q1 - J.T @ K at Q1=0 shifts the
+                # constant term. The derivative rows transform with J.
                 dipole = dipole + shift @ derivatives
                 derivatives = self.rotation @ derivatives
 

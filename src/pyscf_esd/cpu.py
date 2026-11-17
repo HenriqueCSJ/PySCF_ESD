@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from math import isfinite
 from numbers import Integral, Real
 from types import FunctionType, SimpleNamespace
-from typing import TYPE_CHECKING, Sequence
+from typing import TYPE_CHECKING, Literal, Sequence
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
@@ -19,10 +19,36 @@ if TYPE_CHECKING:
 
 _MAX_DENSE_TDA_DIMENSION = 256
 _TDA_RESPONSE_BLOCK_SIZE = 16
+_MAX_DENSE_STABILITY_DIMENSION = 24
+_RKS_SPIN_PROBE_MIN_DIMENSION = 256
+_STABILITY_EIGEN_TOL = 1e-7
+_STABILITY_CUTOFF = -1e-5  # PySCF's threshold in its native orbital-Hessian scaling.
 
 
 class ElectronicConvergenceError(RuntimeError):
     """The electronic solver or an independent numerical check failed."""
+
+
+class UnstableReferenceError(ElectronicConvergenceError):
+    """A converged restricted reference has an unstable orbital direction."""
+
+    def __init__(self, channel: str, stage: str, detail: str = ""):
+        self.channel = channel
+        self.stage = stage
+        name = {"internal": "internal", "restricted_to_unrestricted": "restricted-to-unrestricted"}[channel]
+        suffix = f" {detail}" if detail else ""
+        super().__init__(f"{stage} has a {name} orbital instability.{suffix}")
+
+
+class ReferenceStabilityUnresolvedError(ElectronicConvergenceError):
+    """The orbital-Hessian solve could not qualify a restricted reference."""
+
+    def __init__(self, channel: str, stage: str, detail: str = ""):
+        self.channel = channel
+        self.stage = stage
+        name = channel.replace("_", "-")
+        suffix = f" {detail}" if detail else ""
+        super().__init__(f"{stage} has unresolved {name} orbital stability.{suffix}")
 
 
 @dataclass(frozen=True)
@@ -48,6 +74,7 @@ class Settings:
     cphf_conv_tol: float = 1e-10
     cphf_max_cycle: int = 100
     direct_scf_tol: float = 1e-13
+    stability_checks: str = "minima"
 
     def __post_init__(self) -> None:
         for name in ("basis", "xc"):
@@ -64,6 +91,8 @@ class Settings:
         # PySCF's default atomic radial and angular grids are tabulated for 0..9.
         if self.grid_level > 9:
             raise ValueError("grid_level must be <= 9")
+        if self.stability_checks not in ("minima", "all"):
+            raise ValueError("stability_checks must be minima or all")
         for name in ("scf_conv_tol", "scf_residual_tol", "td_residual_tol",
                      "cphf_conv_tol", "direct_scf_tol"):
             value = getattr(self, name)
@@ -148,12 +177,438 @@ class ElectronicPoint:
         natm = self.mol.natm
         return _checked_array(hessian.kernel(), (natm, natm, 3, 3), "ground-state Hessian")
 
-    def reference_stability(self) -> tuple[bool, bool]:
-        """Check internal and external RKS stability in PySCF's stability model."""
-        _, _, internal, external = self._mean_field.stability(
-            internal=True, external=True, return_status=True,
-        )
+    def reference_stability(self, stage: str = "Electronic point reference") -> tuple[bool, bool]:
+        """Check internal and restricted-to-unrestricted orbital stability."""
+        _, _, internal, external = _restricted_stability(self._mean_field, stage, internal=True, external=True)
         return bool(internal), bool(external)
+
+
+def _stability_options(mean_field) -> dict:
+    occupied = int((mean_field.mo_occ > 0).sum())
+    pairs = (len(mean_field.mo_occ) - occupied) * occupied
+    return {"nroots": min(2, int(pairs)), "tol": 1e-7}
+
+
+def _restricted_stability(mean_field, stage: str, *, internal: bool, external: bool):
+    xc = getattr(mean_field, "xc", None)
+    # Keep GPU and pure-HF stability on their existing native routes.
+    if isinstance(xc, str) and isinstance(getattr(mean_field, "mo_coeff", None), np.ndarray):
+        from pyscf.dft import libxc
+
+        if libxc.xc_type(xc) != "HF":
+            return _dft_stability(mean_field, stage, internal=internal, external=external)
+    return mean_field.stability(
+        internal=internal, external=external, return_status=True, **_stability_options(mean_field),
+    )
+
+
+def _dft_stability(mean_field, stage: str, *, internal: bool, external: bool):
+    rotated = internal_stable = external_stable = None
+    if internal:
+        channel = "internal"
+        try:
+            from pyscf.scf.stability import _rotate_mo
+
+            hop, diagonal = _rks_internal_stability_operator(mean_field)
+            mode = _negative_stability_mode(hop, diagonal)
+        except (ElectronicConvergenceError, ImportError) as error:
+            raise ReferenceStabilityUnresolvedError(channel, stage, str(error)) from error
+        internal_stable = mode is None
+        rotated = mean_field.mo_coeff if internal_stable else _rotate_mo(
+            mean_field.mo_coeff, mean_field.mo_occ, mode,
+        )
+    if external:
+        channel = "restricted_to_unrestricted"
+        try:
+            from pyscf.scf.stability import _gen_hop_rhf_external
+
+            # PySCF's external status is the spin-breaking channel. Reuse that
+            # operator and its scaling without constructing a UKS determinant.
+            _, _, hop, diagonal = _gen_hop_rhf_external(mean_field)
+            block = None
+            if len(diagonal) >= _RKS_SPIN_PROBE_MIN_DIMENSION and not mean_field.mol.symmetry:
+                block = _optional_rks_stability_block(mean_field, channel)
+            external_stable = _negative_stability_mode(hop, diagonal, block_operator=block) is None
+        except (ElectronicConvergenceError, ImportError) as error:
+            raise ReferenceStabilityUnresolvedError(channel, stage, str(error)) from error
+    return rotated, None, internal_stable, external_stable
+
+
+def _rks_internal_stability_operator(mean_field, *, with_symmetry: bool = True):
+    from pyscf.soscf.newton_ah import gen_g_hop_rhf
+
+    _, hop, diagonal = gen_g_hop_rhf(
+        mean_field, mean_field.mo_coeff, mean_field.mo_occ, with_symmetry=with_symmetry,
+    )
+    # PySCF scales the internal operator by two in its stability wrapper.
+    return lambda vector: 2 * hop(vector).real, 2 * diagonal
+
+
+def _has_native_rks_response(mean_field) -> bool:
+    from pyscf.scf._response_functions import _gen_rhf_response
+
+    underlying = getattr(mean_field, "_scf", mean_field)
+    return (getattr(mean_field.gen_response, "__func__", None) is _gen_rhf_response
+            and getattr(underlying, "mol", mean_field.mol) is mean_field.mol)
+
+
+def _rks_fock_blocks(mean_field):
+    occupied = mean_field.mo_coeff[:, mean_field.mo_occ == 2]
+    virtual = mean_field.mo_coeff[:, mean_field.mo_occ == 0]
+    density = mean_field.make_rdm1(mean_field.mo_coeff, mean_field.mo_occ)
+    fock = mean_field.get_hcore() + mean_field.get_veff(mean_field.mol, density)
+    return occupied, virtual, occupied.T @ fock @ occupied, virtual.T @ fock @ virtual
+
+
+def _semilocal_complex_curvature(mean_field, operator, threshold: float) -> _StabilityCurvature | None:
+    """Find the exact minimum of the native semilocal real-to-complex operator."""
+    if not _has_native_rks_response(mean_field) or mean_field._numint.libxc.is_hybrid_xc(mean_field.xc):
+        return None
+    occupied, virtual, foo, fvv = _rks_fock_blocks(mean_field)
+    if occupied.shape[1] == 0 or virtual.shape[1] == 0:
+        return None
+
+    # An antisymmetric density perturbation has zero Coulomb and semilocal
+    # XC response. The native Hessian acts as Fvv X - X Foo on the full space.
+    occupied_energies, occupied_modes = np.linalg.eigh(foo)
+    virtual_energies, virtual_modes = np.linalg.eigh(fvv)
+    mode = np.outer(virtual_modes[:, 0], occupied_modes[:, -1]).ravel()
+    product = _checked_array(operator(mode), mode.shape, "real-to-complex orbital Hessian product")
+    curvature = float(mode @ product)
+    residual = float(np.linalg.norm(product - curvature * mode))
+    expected = virtual_energies[0] - occupied_energies[-1]
+    if abs(expected - curvature) > _STABILITY_EIGEN_TOL or residual > _STABILITY_EIGEN_TOL:
+        return None
+    if curvature < threshold:
+        return _StabilityCurvature(curvature, residual, mode)
+    if curvature - residual >= threshold:
+        return _StabilityCurvature(curvature, residual, None)
+    return None
+
+
+def _rks_stability_block_operator(mean_field, channel):
+    """Batch restricted internal or spin-breaking HVPs through one native response call."""
+    if not _has_native_rks_response(mean_field):
+        return None
+    if channel == "internal":
+        scale = 4
+        singlet = None
+    elif channel == "restricted_to_unrestricted":
+        scale = 1
+        singlet = False
+    else:
+        return None
+
+    occupied, virtual, foo, fvv = _rks_fock_blocks(mean_field)
+    response = mean_field.gen_response(singlet=singlet, hermi=1, with_nlc=False)
+
+    def apply(rows):
+        amplitudes = rows.reshape(len(rows), virtual.shape[1], occupied.shape[1])
+        density_tr = virtual @ (2 * amplitudes) @ occupied.T
+        density = density_tr + density_tr.swapaxes(-2, -1)
+        product = fvv @ amplitudes - amplitudes @ foo + virtual.T @ response(density) @ occupied
+        return (scale * product).reshape(rows.shape)
+
+    return apply
+
+
+def _optional_rks_stability_block(mean_field, channel):
+    try:
+        return _rks_stability_block_operator(mean_field, channel)
+    except (ElectronicConvergenceError, TypeError, ValueError, NotImplementedError):
+        return None
+
+
+def _negative_stability_mode(
+    operator, diagonal: NDArray[np.float64], *, block_operator=None,
+) -> NDArray[np.float64] | None:
+    """Return a negative direction or qualify the lowest curvature of this operator."""
+    evidence = _stability_curvature(
+        operator, diagonal, _STABILITY_CUTOFF, block_operator=block_operator,
+        probe_low_gap=block_operator is not None,
+    )
+    return evidence.below_threshold_direction
+
+
+@dataclass(frozen=True)
+class _StabilityCurvature:
+    curvature: float
+    residual: float
+    below_threshold_direction: NDArray[np.float64] | None
+
+
+def _stability_curvature(
+    operator, diagonal: NDArray[np.float64], threshold: float, *, block_operator=None, probe_low_gap: bool = False,
+) -> _StabilityCurvature:
+    """Verify a lowest-mode estimate or a direction below the required curvature."""
+    dimension = len(diagonal)
+    diagonal = _checked_array(diagonal, (dimension,), "orbital Hessian diagonal")
+    if not dimension:
+        raise ElectronicConvergenceError("The occupied–virtual rotation space is empty.")
+
+    def apply(vector):
+        return _checked_array(operator(vector), (dimension,), "orbital Hessian product")
+
+    block_verified = False
+
+    def apply_many(rows):
+        nonlocal block_operator, block_verified
+        if block_operator is None or len(rows) < 2:
+            return [apply(row) for row in rows]
+        rows = np.asarray(rows)
+        try:
+            # Limit the intermediate AO density storage independently of the
+            # Davidson subspace size.
+            products = np.concatenate([block_operator(rows[i:i + 2]) for i in range(0, len(rows), 2)])
+            products = _checked_array(products, rows.shape, "batched orbital Hessian products")
+            if not block_verified:
+                for row, product in zip(rows[:2], products[:2]):
+                    scalar = apply(row)
+                    if np.linalg.norm(product - scalar) > 1e-10 * max(1., np.linalg.norm(scalar)):
+                        raise ElectronicConvergenceError("Batched and native orbital Hessian actions disagree.")
+                block_verified = True
+            return products
+        except (ElectronicConvergenceError, TypeError, ValueError, NotImplementedError):
+            block_operator = None
+            return [apply(row) for row in rows]
+
+    if dimension <= _MAX_DENSE_STABILITY_DIMENSION:
+        matrix = np.column_stack([apply(axis) for axis in np.eye(dimension)])
+        if np.linalg.norm(matrix - matrix.T, ord=np.inf) > _STABILITY_EIGEN_TOL:
+            raise ElectronicConvergenceError("The orbital Hessian is not symmetric to the eigensolver tolerance.")
+        try:
+            _, vectors = np.linalg.eigh((matrix + matrix.T) * 0.5)
+        except np.linalg.LinAlgError as error:
+            raise ElectronicConvergenceError("Dense orbital-Hessian diagonalization failed.") from error
+        mode = vectors[:, 0]
+        product = matrix @ mode
+        curvature = float(mode @ product)
+        residual = float(np.linalg.norm(product - curvature * mode))
+        if curvature < threshold:
+            return _StabilityCurvature(curvature, residual, mode)
+        if residual <= _STABILITY_EIGEN_TOL and curvature - residual >= threshold:
+            return _StabilityCurvature(curvature, residual, None)
+        raise ElectronicConvergenceError("The lowest orbital curvature could not be resolved at the cutoff.")
+
+    from pyscf import lib
+    from pyscf.lib.linalg_helper import LinearDependenceError
+
+    guesses = np.zeros((2, dimension))
+    lowest_pairs = np.argsort(diagonal, kind="stable")
+    guesses[np.arange(2), lowest_pairs[:2]] = 1.0
+    if probe_low_gap:
+        # A small projection can expose a downhill direction quickly. Only
+        # the full native HVP decides whether that direction fails the cutoff.
+        indices = lowest_pairs[:_MAX_DENSE_STABILITY_DIMENSION]
+        basis = np.zeros((len(indices), dimension))
+        basis[np.arange(len(indices)), indices] = 1.0
+        projected = np.asarray(apply_many(basis))[:, indices]
+        if np.linalg.norm(projected - projected.T, ord=np.inf) <= _STABILITY_EIGEN_TOL:
+            _, vectors = np.linalg.eigh((projected + projected.T) * 0.5)
+            guesses[0, indices] = vectors[:, 0]
+            product = apply(guesses[0])
+            curvature = float(guesses[0] @ product)
+            if curvature < threshold:
+                residual = float(np.linalg.norm(product - curvature * guesses[0]))
+                return _StabilityCurvature(curvature, residual, guesses[0].copy())
+    random = np.random.default_rng(0)
+    lowest_verified = np.inf
+    confirmations = 0
+    for max_cycle, max_space, use_guesses in ((50, 16, True), (100, 32, False), (100, 32, True)):
+        # Mix coordinate or Ritz guesses into full-support probes. Providing
+        # exact low-gap or prior Ritz vectors as separate seeds can stop the
+        # solver before it explores another Hessian block.
+        seeds = random.standard_normal((2, dimension))
+        seeds /= np.linalg.norm(seeds, axis=1, keepdims=True)
+        if use_guesses and len(guesses):
+            seeds[:len(guesses)] += guesses
+        try:
+            converged, eigenvalues, vectors = lib.davidson1(
+                apply_many, list(seeds), diagonal, nroots=2,
+                tol=_STABILITY_EIGEN_TOL, tol_residual=_STABILITY_EIGEN_TOL,
+                max_cycle=max_cycle, max_space=max_space,
+            )
+        except (LinearDependenceError, np.linalg.LinAlgError):
+            continue
+        verified = []
+        guesses = []
+        for converged_root, eigenvalue, vector in zip(converged, eigenvalues, vectors):
+            try:
+                vector = _checked_array(vector, (dimension,), "orbital-Hessian Ritz vector")
+            except ElectronicConvergenceError:
+                continue
+            length = np.linalg.norm(vector)
+            if not np.isfinite(length) or length == 0:
+                continue
+            mode = vector / length
+            guesses.append(mode)
+            product = apply(mode)
+            curvature = float(mode @ product)
+            residual = float(np.linalg.norm(product - curvature * mode))
+            # A Rayleigh quotient below the threshold directly disproves the
+            # required curvature bound, even for an unconverged eigenpair.
+            if curvature < threshold:
+                return _StabilityCurvature(curvature, residual, mode)
+            if (
+                converged_root and abs(length - 1.0) <= 1e-6 and residual <= _STABILITY_EIGEN_TOL
+                and abs(eigenvalue - curvature) <= _STABILITY_EIGEN_TOL
+            ):
+                verified.append((curvature, residual, mode))
+        if len(verified) != 2:
+            continue
+        if abs(float(verified[0][2] @ verified[1][2])) > 1e-6:
+            continue
+        curvature, residual, _ = min(verified, key=lambda root: root[0])
+        if curvature < lowest_verified - 2 * _STABILITY_EIGEN_TOL:
+            lowest_verified = curvature
+            confirmations = 0
+        if (
+            abs(curvature - lowest_verified) <= 2 * _STABILITY_EIGEN_TOL
+            and curvature - residual >= threshold
+        ):
+            confirmations += 1
+            if confirmations == 2:
+                return _StabilityCurvature(curvature, residual, None)
+    raise ElectronicConvergenceError("Independent starts did not confirm the lowest orbital-Hessian curvature.")
+
+
+@dataclass(frozen=True)
+class OrbitalStabilityChannel:
+    """An orbital-Hessian result in the native PySCF scaling for this channel."""
+
+    channel: str
+    status: Literal["qualified", "negative_direction", "below_margin", "unresolved"]
+    curvature: float | None = None
+    eigenpair_residual: float | None = None
+    reason: str | None = None
+
+
+@dataclass(frozen=True)
+class RKSStabilityReport:
+    """Evidence for an independent three-channel assessment of one CPU RKS determinant."""
+
+    scf_residual_hartree: float
+    scf_residual_tolerance_hartree: float
+    minimum_curvature: float
+    channels: tuple[OrbitalStabilityChannel, ...]
+
+    @property
+    def qualified(self) -> bool:
+        return all(channel.status == "qualified" for channel in self.channels)
+
+
+def assess_rks_stability(
+    mean_field, *, scf_residual_tolerance: float = 1e-7, minimum_curvature: float = 1e-6,
+) -> RKSStabilityReport:
+    """Check internal, real-to-complex and spin-breaking stability in one CPU RKS reference.
+
+    Requires native convergence and an independently recomputed SCF residual.
+    Positive qualification needs the verified lowest mode of every channel above
+    the requested margin. A reported failure curvature can be a Rayleigh
+    witness. Its eigenpair residual indicates how far it is from an eigenmode.
+    """
+    from pyscf.dft import libxc
+    from pyscf.dft.rks import RKS
+
+    for name, value in (("scf_residual_tolerance", scf_residual_tolerance), ("minimum_curvature", minimum_curvature)):
+        if isinstance(value, bool) or not isinstance(value, Real) or not isfinite(value) or value <= 0:
+            raise ValueError(f"{name} must be positive and finite")
+    if not isinstance(mean_field, RKS) or libxc.xc_type(mean_field.xc) == "HF":
+        raise TypeError("three-channel stability requires a CPU restricted Kohn–Sham DFT reference")
+    if mean_field.do_nlc():
+        raise ReferenceStabilityUnresolvedError(
+            "internal", "RKS reference", "PySCF's internal orbital Hessian omits the nonlocal correlation response.",
+        )
+    if not mean_field.converged:
+        raise ElectronicConvergenceError("Converge the RKS determinant before assessing orbital stability.")
+    if not isinstance(mean_field.mo_coeff, np.ndarray) or not np.isrealobj(mean_field.mo_coeff):
+        raise TypeError("three-channel stability requires real NumPy molecular orbitals")
+    residual = _scf_residual(mean_field)
+    if residual > scf_residual_tolerance:
+        raise ElectronicConvergenceError(
+            f"RKS residual {residual:.3g} Hartree exceeds the stability input tolerance {scf_residual_tolerance:.3g}."
+        )
+
+    reports = []
+    threshold = np.nextafter(minimum_curvature, np.inf)
+
+    def assess(name, operator, diagonal):
+        try:
+            evidence = None
+            if name == "real_to_complex":
+                try:
+                    evidence = _semilocal_complex_curvature(mean_field, operator, threshold)
+                except (ElectronicConvergenceError, np.linalg.LinAlgError):
+                    pass
+            if evidence is None:
+                block = None
+                if len(diagonal) > _MAX_DENSE_STABILITY_DIMENSION:
+                    block = _optional_rks_stability_block(mean_field, name)
+                evidence = _stability_curvature(
+                    operator, diagonal, threshold, block_operator=block,
+                    probe_low_gap=(name == "restricted_to_unrestricted" and block is not None
+                                   and len(diagonal) >= _RKS_SPIN_PROBE_MIN_DIMENSION),
+                )
+        except (ElectronicConvergenceError, ImportError, NotImplementedError) as error:
+            reports.append(OrbitalStabilityChannel(name, "unresolved", reason=str(error)))
+        else:
+            if evidence.below_threshold_direction is None:
+                status = "qualified"
+            elif evidence.curvature < -_STABILITY_EIGEN_TOL:
+                status = "negative_direction"
+            else:
+                status = "below_margin"
+            reports.append(OrbitalStabilityChannel(name, status, evidence.curvature, evidence.residual))
+
+    try:
+        internal, internal_diagonal = _rks_internal_stability_operator(mean_field, with_symmetry=False)
+    except (ImportError, NotImplementedError) as error:
+        reports.append(OrbitalStabilityChannel("internal", "unresolved", reason=str(error)))
+    else:
+        assess("internal", internal, internal_diagonal)
+
+    try:
+        from pyscf.scf.stability import _gen_hop_rhf_external
+
+        complex_rotation, complex_diagonal, unrestricted, unrestricted_diagonal = _gen_hop_rhf_external(
+            mean_field, with_symmetry=False,
+        )
+    except (ImportError, NotImplementedError) as error:
+        for name in ("real_to_complex", "restricted_to_unrestricted"):
+            reports.append(OrbitalStabilityChannel(name, "unresolved", reason=str(error)))
+    else:
+        assess("real_to_complex", complex_rotation, complex_diagonal)
+        assess("restricted_to_unrestricted", unrestricted, unrestricted_diagonal)
+    return RKSStabilityReport(residual, float(scf_residual_tolerance), float(minimum_curvature), tuple(reports))
+
+
+def require_stable_reference(internal: bool, unrestricted: bool, stage: str) -> None:
+    """Report which orbital-stability channel failed at the given geometry."""
+    if not internal:
+        raise UnstableReferenceError("internal", stage)
+    if not unrestricted:
+        raise UnstableReferenceError("restricted_to_unrestricted", stage)
+
+
+def check_restricted_reference(mean_field, stage: str) -> None:
+    """Check a stationary endpoint and report a verified instability when available."""
+    try:
+        _, _, internal, _ = _restricted_stability(mean_field, stage, internal=True, external=False)
+    except ReferenceStabilityUnresolvedError as internal_failure:
+        # An inconclusive internal solve can coexist with a confirmed direction
+        # towards spin breaking. Preserve the internal failure if the external
+        # check cannot establish an instability either.
+        try:
+            _, _, _, unrestricted = _restricted_stability(mean_field, stage, internal=False, external=True)
+        except ReferenceStabilityUnresolvedError:
+            raise internal_failure from None
+        if unrestricted is not None and not unrestricted:
+            raise UnstableReferenceError("restricted_to_unrestricted", stage) from internal_failure
+        raise
+    else:
+        require_stable_reference(internal, True, stage)
+        _, _, _, unrestricted = _restricted_stability(mean_field, stage, internal=False, external=True)
+        require_stable_reference(True, unrestricted, stage)
 
 
 def _checked_excited_gradient(gradient, state: int) -> NDArray[np.float64]:
@@ -383,6 +838,7 @@ def _make_mean_field(mol: Mole, settings: Settings) -> RKS:
 def _solve_reference(
     mol: Mole, settings: Settings, previous: OrbitalSeed | ElectronicPoint | None,
 ) -> tuple[RKS, float, tuple[ScfAttempt, ...]]:
+    """Try projected and fresh restricted guesses and verify stationarity."""
     attempts = []
     routes = []
     if previous is not None:
@@ -406,8 +862,52 @@ def _solve_reference(
         accepted = bool(mean_field.converged and residual <= settings.scf_residual_tol)
         attempts.append(ScfAttempt(route, bool(mean_field.converged), residual, accepted))
         if accepted:
+            if settings.stability_checks == "all":
+                mean_field, residual = _stabilize_reference(mean_field, mol, settings, residual, attempts)
             return mean_field, residual, tuple(attempts)
     raise ElectronicConvergenceError(f"RKS did not meet convergence checks after {attempts}")
+
+
+def _stabilize_reference(mean_field, mol, settings: Settings, residual: float, attempts: list[ScfAttempt]):
+    """Repair an internal saddle using fresh restricted SCF solves at the same geometry."""
+    stage = "SCF reference at a sampled geometry"
+    for attempt in range(5):
+        rotated, _, stable, _ = _restricted_stability(mean_field, stage, internal=True, external=False)
+        if stable:
+            # A spin-breaking direction requires a different electronic
+            # reference. The restricted rotation search only treats internal saddles.
+            _, _, _, unrestricted = _restricted_stability(mean_field, stage, internal=False, external=True)
+            require_stable_reference(True, unrestricted, stage)
+            return mean_field, residual
+        if attempt == 4:
+            break
+        # The proposed orbitals seed a new SCF. An energy decrease beyond
+        # the SCF tolerance distinguishes a new solution from the same saddle.
+        density = mean_field.make_rdm1(mo_coeff=rotated, mo_occ=mean_field.mo_occ)
+        for route in ("stability_rotation_diis", "stability_rotation_soscf"):
+            candidate = _make_mean_field(mol, settings)
+            if route.endswith("soscf"):
+                candidate = candidate.newton()
+            candidate.kernel(dm0=density)
+            try:
+                candidate_residual = _scf_residual(candidate)
+            except ElectronicConvergenceError:
+                candidate_residual = None
+            accepted = bool(
+                candidate.converged and candidate_residual is not None
+                and candidate_residual <= settings.scf_residual_tol
+                and candidate.e_tot < mean_field.e_tot - settings.scf_conv_tol
+            )
+            attempts.append(ScfAttempt(route, bool(candidate.converged), candidate_residual, accepted))
+            if accepted:
+                mean_field, residual = candidate, candidate_residual
+                break
+        else:
+            raise UnstableReferenceError(
+                "internal", stage,
+                "The rotated orbitals did not converge to a lower-energy restricted solution.",
+            )
+    raise UnstableReferenceError("internal", stage, "Restricted orbital-rotation recovery exhausted its budget.")
 
 
 def _project_density(
@@ -439,12 +939,14 @@ def _orthogonalized_density(
     eigenvalues, eigenvectors = np.linalg.eigh(orbitals.T @ overlap @ orbitals)
     if np.any(eigenvalues < 1e-8):
         raise np.linalg.LinAlgError("projected occupied space lost rank")
+    # Restore S-orthonormal occupied orbitals so Tr(D S) equals the closed-shell electron count.
     metric_inverse_root = (eigenvectors / np.sqrt(eigenvalues)) @ eigenvectors.T
     orthogonalized = orbitals @ metric_inverse_root
     return 2 * orthogonalized @ orthogonalized.T
 
 
 def _scf_residual(mean_field: RKS) -> float:
+    """Measure the occupied–virtual orbital gradient of the final density."""
     coefficients = np.asarray(mean_field.mo_coeff)
     nao = mean_field.mol.nao_nr()
     nocc = mean_field.mol.nelectron // 2
@@ -461,6 +963,8 @@ def _scf_residual(mean_field: RKS) -> float:
     if not np.allclose(coefficients.T @ overlap @ coefficients, np.eye(nmo), atol=1e-7, rtol=0.0):
         raise ElectronicConvergenceError("RKS orbitals are not orthonormal in the AO overlap")
     density = mean_field.make_rdm1()
+    # Rebuild the physical Fock matrix from the converged density. The
+    # iterative solver may have used DIIS or second-order intermediates.
     fock = _checked_array(
         mean_field.get_hcore() + mean_field.get_veff(dm=density),
         (nao, nao), "fresh RKS Fock matrix",
@@ -515,6 +1019,7 @@ def _dense_tda_retry(td: TDA, nocc: int, nvir: int, tolerance: float) -> None:
     if np.any(roots <= 0.0):
         raise ElectronicConvergenceError("TDA roots must be positive")
 
+    # Match PySCF's restricted TDA convention X.T @ X = 1/2 after flattening X.
     td.e = roots[:td.nstates].copy()
     td.xy = [
         (vector.reshape(nocc, nvir) / np.sqrt(2), 0)

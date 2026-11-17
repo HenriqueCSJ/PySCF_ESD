@@ -10,16 +10,25 @@ import numpy as np
 from pyscf_esd.cpu import (
     ElectronicConvergenceError,
     ElectronicPoint,
+    ReferenceStabilityUnresolvedError,
     Settings,
+    UnstableReferenceError,
     _checked_excited_gradient,
     _dense_tda_retry,
     _make_mean_field,
+    _negative_stability_mode,
     _orthogonalized_density,
     _scf_residual,
+    _semilocal_complex_curvature,
+    _rks_internal_stability_operator,
+    _rks_stability_block_operator,
+    _stability_curvature,
     _solve_excited_response,
     _solve_reference,
     _tda_residuals,
+    assess_rks_stability,
     build_molecule,
+    check_restricted_reference,
     solve_point,
 )
 
@@ -110,6 +119,207 @@ class CpuBackendTests(unittest.TestCase):
         self.assertTrue(attempts[1].accepted)
         cold.kernel.assert_called_once_with(dm0=None)
         newton.kernel.assert_called_once_with(dm0=None)
+
+    def test_restricted_internal_recovery_uses_rotated_density_and_lower_energy(self):
+        settings = Settings("sto-3g", "hf", stability_checks="all")
+        orbitals = np.eye(2)[:, ::-1]
+        occupations = np.array([2., 0.])
+        first = Mock(converged=True, e_tot=-.4, mo_occ=occupations)
+        first.stability.return_value = orbitals, None, False, None
+        repaired = Mock(converged=True, e_tot=-.8, mo_occ=occupations)
+        repaired.stability.side_effect = [(np.eye(2), None, True, None), (None, None, None, True)]
+        with (
+            patch("pyscf_esd.cpu._make_mean_field", side_effect=[first, repaired]),
+            patch("pyscf_esd.cpu._scf_residual", side_effect=[1e-10, 2e-10]),
+        ):
+            result, residual, attempts = _solve_reference(object(), settings, None)
+        self.assertIs(result, repaired)
+        self.assertEqual(residual, 2e-10)
+        first.make_rdm1.assert_called_once_with(mo_coeff=orbitals, mo_occ=occupations)
+        repaired.kernel.assert_called_once_with(dm0=first.make_rdm1.return_value)
+        self.assertEqual(attempts[-1].route, "stability_rotation_diis")
+        self.assertEqual(repaired.stability.call_count, 2)
+
+    @unittest.skipUnless(find_spec("pyscf"), "PySCF is required for molecular stability checks")
+    def test_restricted_spin_instability_is_distinguished_from_scf_convergence(self):
+        settings = Settings("sto-3g", "pbe0", nstates=1, grid_level=1, stability_checks="all")
+        symbols = ("H", "H")
+        equilibrium = build_molecule(symbols, [[0, 0, 0], [0, 0, 1.4]], settings)
+        reference, residual, _ = _solve_reference(equilibrium, settings, None)
+        self.assertTrue(reference.converged)
+        self.assertLessEqual(residual, settings.scf_residual_tol)
+        report = assess_rks_stability(reference)
+        self.assertTrue(report.qualified)
+        self.assertEqual([row.channel for row in report.channels],
+                         ["internal", "real_to_complex", "restricted_to_unrestricted"])
+        stretched = build_molecule(symbols, [[0, 0, 0], [0, 0, 4.5]], settings)
+        with self.assertRaises(UnstableReferenceError) as failure:
+            _solve_reference(stretched, settings, None)
+        self.assertEqual(failure.exception.channel, "restricted_to_unrestricted")
+
+    @unittest.skipUnless(find_spec("pyscf"), "PySCF is required for the RKS assessment interface")
+    def test_three_channel_stability_distinguishes_margin_and_unresolved(self):
+        settings = Settings("sto-3g", "pbe0")
+        molecule = build_molecule(("H", "H"), [[0, 0, 0], [0, 0, 1.4]], settings)
+        reference = _make_mean_field(molecule, settings)
+        reference.converged = True
+        reference.mo_coeff = np.eye(2)
+        reference.mo_occ = np.array([2., 0.])
+        with (
+            patch("pyscf_esd.cpu._scf_residual", return_value=1e-9),
+            patch("pyscf_esd.cpu._rks_internal_stability_operator", return_value=(lambda v: 0.5 * v, [0.5])) as internal,
+            patch("pyscf.scf.stability._gen_hop_rhf_external", return_value=(
+                lambda v: 1e-6 * v, [1e-6], lambda v: np.full_like(v, np.nan), [0.0],
+            )) as external,
+        ):
+            report = assess_rks_stability(reference)
+            with self.assertRaisesRegex(ElectronicConvergenceError, "exceeds"):
+                assess_rks_stability(reference, scf_residual_tolerance=1e-10)
+        self.assertFalse(report.qualified)
+        self.assertEqual([row.status for row in report.channels], ["qualified", "below_margin", "unresolved"])
+        self.assertEqual(report.channels[1].curvature, 1e-6)
+        self.assertIn("nonfinite", report.channels[2].reason)
+        internal.assert_called_once_with(reference, with_symmetry=False)
+        external.assert_called_once_with(reference, with_symmetry=False)
+        with (
+            patch.object(reference, "do_nlc", return_value=True),
+            self.assertRaisesRegex(ReferenceStabilityUnresolvedError, "nonlocal correlation"),
+        ):
+            assess_rks_stability(reference)
+
+    @unittest.skipUnless(find_spec("pyscf"), "PySCF is required for exact semilocal orbital stability")
+    def test_semilocal_complex_curvature_matches_full_hessian_with_rotated_orbitals(self):
+        from pyscf.scf.stability import _gen_hop_rhf_external
+
+        settings = Settings("sto-3g", "pbe", grid_level=1)
+        mol = build_molecule(("O", "H", "H"), [[0, 0, 0], [0, 1.4, 1.1], [0, -1.4, 1.1]], settings)
+        reference, _, _ = _solve_reference(mol, settings, None)
+        occupied = reference.mo_occ == 2
+        random = np.random.default_rng(12)
+        for block in (occupied, ~occupied):
+            nmo = np.count_nonzero(block)
+            rotation, _ = np.linalg.qr(random.standard_normal((nmo, nmo)))
+            reference.mo_coeff[:, block] = reference.mo_coeff[:, block] @ rotation
+        operator, diagonal, spin, _ = _gen_hop_rhf_external(reference, with_symmetry=False)
+        full = np.column_stack([operator(direction) for direction in np.eye(len(diagonal))])
+        expected = np.linalg.eigvalsh(full)[0]
+        result = _semilocal_complex_curvature(reference, operator, 1e-6)
+        self.assertIsNotNone(result)
+        self.assertAlmostEqual(result.curvature, expected, places=12)
+        self.assertLess(result.residual, 1e-12)
+        self.assertIsNone(result.below_threshold_direction)
+        vectors = random.standard_normal((2, len(diagonal)))
+        internal, _ = _rks_internal_stability_operator(reference, with_symmetry=False)
+        for name, native in (("internal", internal), ("restricted_to_unrestricted", spin)):
+            batched = _rks_stability_block_operator(reference, name)
+            np.testing.assert_allclose(batched(vectors), [native(vector) for vector in vectors], atol=1e-12, rtol=0)
+
+    @unittest.skipUnless(find_spec("pyscf"), "PySCF is required for DFT stability checks")
+    def test_restricted_dft_checks_stationary_orbitals_with_exactly_zero_gradient(self):
+        mf = SimpleNamespace(xc="pbe0", mo_coeff=np.eye(2), mo_occ=np.array([2.0, 0.0]))
+        internal = (np.zeros(1), lambda v: 0.5 * v, np.ones(1))
+        nonfinite_spin_response = (None, None, lambda v: np.full_like(v, np.nan), np.zeros(1))
+        with (
+            patch("pyscf.soscf.newton_ah.gen_g_hop_rhf", return_value=internal),
+            patch("pyscf.scf.stability._gen_hop_rhf_external", return_value=nonfinite_spin_response),
+            self.assertRaises(ReferenceStabilityUnresolvedError) as failure,
+        ):
+            check_restricted_reference(mf, "Test stationary reference")
+        self.assertEqual(failure.exception.stage, "Test stationary reference")
+        self.assertEqual(failure.exception.channel, "restricted_to_unrestricted")
+        self.assertIn("nonfinite", str(failure.exception))
+
+    def test_endpoint_reports_verified_spin_instability_after_inconclusive_internal_solve(self):
+        stage = "Reference at a tracked S1 stationary geometry"
+        reference = object()
+        internal = ReferenceStabilityUnresolvedError("internal", stage, "unconverged lowest mode")
+        external = ReferenceStabilityUnresolvedError("restricted_to_unrestricted", stage)
+        for external_result, expected in (
+            ((None, None, None, False), UnstableReferenceError),
+            ((None, None, None, True), ReferenceStabilityUnresolvedError),
+            (external, ReferenceStabilityUnresolvedError),
+        ):
+            with (
+                self.subTest(external_result=external_result),
+                patch("pyscf_esd.cpu._restricted_stability", side_effect=[internal, external_result]) as check,
+                self.assertRaises(expected) as failure,
+            ):
+                check_restricted_reference(reference, stage)
+            check.assert_called_with(reference, stage, internal=False, external=True)
+            if expected is UnstableReferenceError:
+                self.assertEqual(failure.exception.channel, "restricted_to_unrestricted")
+            else:
+                self.assertIs(failure.exception, internal)
+
+    @unittest.skipUnless(find_spec("pyscf"), "PySCF Davidson is required")
+    def test_stability_seeds_find_negative_mode_in_an_orthogonal_block(self):
+        diagonal = np.linspace(0.1, 3.0, 32)
+        diagonal[-2:] = 3.0
+        hessian = np.diag(diagonal)
+        hessian[-1, -2] = hessian[-2, -1] = 4.0
+        from pyscf import lib
+
+        native_root, _ = lib.davidson(lambda vector: hessian @ vector, 1 / diagonal, diagonal, nroots=2)
+        self.assertGreater(native_root[0], 0.0)
+        mode = _negative_stability_mode(lambda vector: hessian @ vector, diagonal)
+        self.assertAlmostEqual(mode @ hessian @ mode, -1.0)
+        for shift in (0.0, 0.01):
+            block = Mock(side_effect=lambda vectors: vectors @ hessian + shift)
+            evidence = _stability_curvature(lambda vector: hessian @ vector, diagonal, -1e-5, block_operator=block)
+            self.assertAlmostEqual(evidence.curvature, -1.0)
+            if shift:
+                block.assert_called_once()
+            else:
+                self.assertGreater(block.call_count, 1)
+
+    @unittest.skipUnless(find_spec("pyscf"), "PySCF is required for the stability solver")
+    def test_low_gap_projection_only_accepts_a_native_negative_witness(self):
+        from pyscf import lib
+
+        diagonal = np.linspace(0.1, 3, 32)
+        stable = np.diag(diagonal)
+        broken = stable.copy()
+        broken[0, 1] = broken[1, 0] = -0.5
+        for use_fake_block in (False, True):
+            actual = stable if use_fake_block else broken
+            with patch("pyscf.lib.davidson1", wraps=lib.davidson1) as iterative:
+                result = _stability_curvature(
+                    lambda vector: actual @ vector, diagonal, -1e-5,
+                    block_operator=lambda rows: rows @ broken, probe_low_gap=True,
+                )
+            if use_fake_block:
+                self.assertGreater(iterative.call_count, 0)
+                self.assertIsNone(result.below_threshold_direction)
+            else:
+                iterative.assert_not_called()
+                self.assertLess(result.curvature, 0)
+
+    @unittest.skipUnless(find_spec("pyscf"), "PySCF Davidson is required")
+    def test_stability_verifies_negative_direction_even_with_unconverged_ritz_pair(self):
+        diagonal = np.linspace(-0.5, 1.0, 32)
+        trial = np.eye(len(diagonal))[0] + 0.3 * np.eye(len(diagonal))[-1]
+        with patch("pyscf.lib.davidson1", return_value=([False], [0.0], [trial])) as davidson:
+            mode = _negative_stability_mode(lambda vector: diagonal * vector, diagonal)
+        davidson.assert_called_once()
+        np.testing.assert_allclose(mode, trial / np.linalg.norm(trial))
+        self.assertLess(mode @ (diagonal * mode), 0.0)
+
+    @unittest.skipUnless(find_spec("pyscf"), "PySCF Davidson is required")
+    def test_stability_rejects_unverified_ritz_results_and_restarts_reproducibly(self):
+        diagonal = np.linspace(0.1, 1.0, 32)
+        trial = np.eye(len(diagonal))[:2]
+        checked_seeds = []
+        for flags, values in (([False, True], diagonal[:2]), ([True, True], [-0.1, diagonal[1]])):
+            with (
+                patch("pyscf.lib.davidson1", return_value=(flags, values, trial)) as davidson,
+                self.assertRaisesRegex(ElectronicConvergenceError, "Independent starts"),
+            ):
+                _negative_stability_mode(lambda vector: diagonal * vector, diagonal)
+            self.assertEqual(davidson.call_count, 3)
+            checked_seeds.append(np.array([call.args[1][:2] for call in davidson.call_args_list]))
+        np.testing.assert_array_equal(checked_seeds[0], checked_seeds[1])
+        self.assertTrue(np.all(checked_seeds[0] != 0.0))
+        self.assertFalse(np.array_equal(checked_seeds[0][0], checked_seeds[0][1]))
 
     def test_td_residual_and_amplitude_normalization(self):
         operator = np.diag([0.2, 0.4, 0.6])
