@@ -12,6 +12,7 @@ from .phosphorescence import (
     spin_orbit_dipole_derivatives, spin_orbit_phosphorescence,
 )
 from .pyscf_soc import PySCFTDASOC, assemble_pyscf_tda_soc, run_pyscf_tda_soc
+from .tda_soc_response import TDASOCResponse, tda_soc_response
 from .rotor_coordinates import (
     bond_rotation, map_transported_spectators, project_spectator_modes, project_torsion,
     transport_bond_spectators,
@@ -30,7 +31,7 @@ __all__ = [
     "MolecularTDAHessian", "PhasedPeriodicScan", "PhasedRotorDipole", "PhosphorescenceResult", "UKSTripletEndpoint",
     "TDADipoleResult", "ThermalSeparableSpectrum", "VibrationalMixingResult", "VibronicResult", "WorkflowIncomplete",
     "UnrestrictedTDAVerticalSpectrum", "VibronicPhosphorescenceResult",
-    "PySCFTDASOC", "assemble_pyscf_tda_soc",
+    "PySCFTDASOC", "TDASOCResponse", "assemble_pyscf_tda_soc", "tda_soc_response",
     "analytic_molecular_tda_hessian", "analytic_tda_transition_dipole", "analytic_uks_triplet_endpoint",
     "anharmonic_spectrum",
     "bond_rotation", "electronic_relaxation_properties", "harmonic_model_properties", "harmonic_spectrum",

@@ -17,7 +17,7 @@ from .anharmonic import (
 )
 from .anharmonic_dvr import DVRResult
 from .anharmonic_sampling import PhasedRotorDipole
-from .harmonic import _KB_HARTREE_PER_K, _fc_parameters, _real_array
+from .harmonic import _KB_HARTREE_PER_K, _amplitude_array, _fc_parameters, _real_array
 from .spectral_properties import HARTREE_TO_WAVENUMBER
 
 _FloatVector = NDArray[np.float64]
@@ -189,8 +189,8 @@ def _harmonic_characteristic(
     modes = omega_i.size
     if derivatives is not None:
         derivatives = _real_array(derivatives, "dipole_derivatives_au")
-        if derivatives.shape != (modes, 3) or dipole is None:
-            raise ValueError("dipole_derivatives_au must have shape (n_modes, 3) and a Cartesian dipole")
+        if dipole is None or derivatives.shape != (modes, dipole.size):
+            raise ValueError("dipole derivatives must match the harmonic modes and dipole components")
         if not np.any(derivatives):
             derivatives = None
     rotation = np.eye(modes) if spectators.rotation is None else _real_array(spectators.rotation, "spectator rotation")
@@ -558,7 +558,7 @@ def thermal_harmonic_spectrum(
     `gap_00_hartree` is the signed final-minus-initial energy difference
     including zero-point energy. For emission the signed gap is negative.
     Final mass-weighted coordinates obey Q_f = rotation @ Q_i + shift_au,
-    with Q in sqrt(electron mass) * bohr. The real Cartesian dipole and its
+    with Q in sqrt(electron mass) * bohr. The real or complex Cartesian dipole and its
     optional (n_modes, 3) gradient are taken at Q_i=0. Franck–Condon and
     Herzberg–Teller contributions interfere at the amplitude level.
 
@@ -574,11 +574,23 @@ def thermal_harmonic_spectrum(
     )
     if not isfinite(gap_00_hartree):
         raise ValueError("gap_00_hartree must be finite")
-    dipole = _real_array(transition_dipole_au, "transition_dipole_au")
+    dipole = _amplitude_array(transition_dipole_au, "transition_dipole_au")
     if dipole.shape != (3,):
         raise ValueError("transition_dipole_au must have three Cartesian components")
+    derivatives = None
+    if dipole_derivatives_au is not None:
+        derivatives = _amplitude_array(dipole_derivatives_au, "dipole_derivatives_au")
+        if derivatives.shape != (np.size(initial_frequencies_hartree), 3):
+            raise ValueError("dipole_derivatives_au must have shape (n_modes, 3)")
+    if np.iscomplexobj(dipole) or np.iscomplexobj(derivatives):
+        # FC and coordinate overlaps are real. The squared complex moment
+        # is the sum of independent real and imaginary Cartesian strengths.
+        # The Fourier phase in each generating function is left intact.
+        dipole = np.concatenate((dipole.real, dipole.imag))
+        if derivatives is not None:
+            derivatives = np.concatenate((derivatives.real, derivatives.imag), axis=1)
     bath = HarmonicSpectators(initial_frequencies_hartree, final_frequencies_hartree, 0, 0, rotation, shift_au)
-    harmonic = _harmonic_characteristic(bath, thermal_energy, sign, dipole=dipole, derivatives=dipole_derivatives_au)
+    harmonic = _harmonic_characteristic(bath, thermal_energy, sign, dipole=dipole, derivatives=derivatives)
     origin = sign * HARTREE_TO_WAVENUMBER * gap_00_hartree
     strength = float(dipole @ dipole) if harmonic.dipole is None else harmonic.dipole.strength
     if not isfinite(strength):

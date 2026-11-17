@@ -82,6 +82,34 @@ $$
 
 `spin_orbit_dipole_derivatives` applies the product rule to $\tilde\mu_{0k,\xi}=u_0^\dagger\mu_\xi u_k$. Both state responses contribute, along with the derivative of the spin-free dipole matrix. Supply the full $\partial_q H$ and $\partial_q\mu_\xi$ as arrays with shapes `(state, state, coordinate)` and `(state, state, coordinate, 3)`. These are derivatives of matrix entries in a smoothly transported spin-free basis. They include the energy, orbital, state, and operator response of the electronic input model. Use Hartree and e·bohr per chosen coordinate. The adapter evaluates this response without finite differences. If a selected state is degenerate within the input tolerance, an individual derivative requires a separate treatment of the coupled subspace.
 
+## Full-space first-order SOC and analytic Herzberg–Teller coupling
+
+`esd.tda_soc_response` uses the same molecular Breit–Pauli SOMF operator to compute weak-SOC intensity borrowing across every occupied–virtual configuration in the finite RKS/TDA basis. It solves linear systems at the target triplet energy for singlet mixing and at the ground-state energy for triplet mixing. The two contributions add as complex amplitudes. It needs a converged target triplet and positive shifted TDA operators. This first-order model uses a Cartesian basis for the spin components of the spin-free triplet and neglects fine-structure energies.
+
+For real orbitals, let $h_m$ be the imaginary part of the spatial SOC coefficient that multiplies $\sigma_m/2$, and let $\ell_O Q=QO_{vv}^\mathsf{T}-O_{oo}^\mathsf{T}Q$ denote the particle and hole action of an orbital operator on the unit spatial triplet amplitude $Q$. With $d_\xi=\sqrt{2}(\mu_\xi)_{ov}$, $g_m=(h_m)_{ov}/\sqrt{2}$, $b_m=\ell_{h_m}Q/2$, and $t_\xi=\ell_{\mu_\xi}Q$, the mixed moment is
+
+$$
+M_{m\xi}=-i\left[
+b_m^\mathsf{T}(A_S-E_T I)^{-1}d_\xi+
+g_m^\mathsf{T} A_T^{-1} t_\xi
+\right].
+$$
+
+The common permanent dipole cancels between the ground-state contribution to the emitting state and the target-triplet contribution to the ground state. The first-order model recovers the sum over higher states without enumerating them.
+
+Supply nuclear directions to differentiate the moment. The analytic path differentiates the electric dipole and SOMF integrals, the spin-summed density, the occupied and virtual orbitals, and the singlet and triplet TDA operators. Adjoint systems account for the change of the triplet root and both resolvents. They are solved at one geometry. Supply the two lowest triplet roots to check that the target is an isolated spatial root. The analytic path uses CPU PySCF with spherical all-electron basis functions in the gas phase and global LDA or GGA, including global hybrid GGAs. Set `mf.small_rho_cutoff = 0` before SCF so the primary atom-centered grid is shared by the reference and response without density pruning. [Analytic SOC derivatives](https://doi.org/10.1021/acs.jctc.5c01442)
+
+```python
+from pyscf import esd
+
+directions = ah_parameters.excited_cartesian_mode_derivatives_au @ ah_parameters.excited_alignment_rotation.T
+response = esd.tda_soc_response(triplet_tda, directions=directions)
+moments = response.transition_dipole_au       # spin component, dipole axis
+slopes = response.dipole_derivatives_au      # mode, spin component, dipole axis
+```
+
+The Cartesian axes are those of the emitting geometry in the supplied TDA object. For equal spin populations, an all-quanta harmonic profile for one polarization uses `moments[:, axis] / sqrt(3)` and `slopes[:, :, axis] / sqrt(3)` as the three independent amplitudes. Use the inverse Duschinsky transform for emission and sum the three photon-weighted polarization profiles to obtain the isotropic rate.
+
 ## Prepared vibronic phosphorescence
 
 Compute the electronic matrices at the emitting triplet minimum and express the moments in the same Cartesian frame as the AH model. Prepare `AdiabaticHessianParameters` for the relaxed $S_0$ and triplet surfaces with independent Hessians using `pyscf_esd.pyscf_adapter.adiabatic_hessian`. Supply the adiabatic 0–0 energy of the lowest spin sublevel in Hartree, including the vibrational zero-point difference and any adiabatic spin correction. The reported line energies use this origin plus the supplied electronic spin splittings.
@@ -136,4 +164,10 @@ Gas-phase DF-B3LYP/def2-SVP with def2-universal-jkfit was used for the RKS groun
 
 The same RKS reference at the UKS triplet minimum supplied 12 singlet and 12 triplet TDA roots with residuals below $10^{-7}$ Hartree. The RKS TDA $T_1$ and UKS determinant have squared overlap 0.945 in their common $M_S=1$ representation. The vertical rate changes by 0.014% from 8 to 12 roots of each spin. Four roots of each spin miss most of the intensity, including the opposite-reflection singles that start at the fifth singlet root. Zeroing SOC makes the transition exactly dark. The first-order and diagonalized total electronic dipole strengths agree to 0.031% in the 12+12 window.
 
-The 77 K Condon rate is $2.603\times10^{-3}\ \mathrm{s}^{-1}$, equivalent to a radiative lifetime of 384 s. Published solution estimates are 75 s in ethanol at 77 K and 19.3 s inferred from the polar-medium data compiled by de Souza and coworkers. The Condon model captures several spacings but overemphasizes the band near 1,630 cm⁻¹ below origin. Only 0.016% of the computed electronic dipole strength is perpendicular to the molecular plane. A later polarization measurement in EPA glass found perpendicular emission. The comparisons span different media. Spin-vibronic HT and borrowing through states above the tested window remain unevaluated. [Ethanol lifetime](https://doi.org/10.1063/1.1674576) · [Compiled radiative rate](https://doi.org/10.1021/acs.jctc.8b00841.s001) · [Polarization reappraisal](https://www.sciencedirect.com/science/article/abs/pii/S0301010405001928)
+The 77 K Condon rate is $2.603\times10^{-3}\ \mathrm{s}^{-1}$, equivalent to a radiative lifetime of 384 s. Published solution estimates are 75 s in ethanol at 77 K and 19.3 s inferred from the polar-medium data compiled by de Souza and coworkers. The Condon model captures several spacings but overemphasizes the band near 1,630 cm⁻¹ below origin. Only 0.016% of the computed electronic dipole strength is perpendicular to the molecular plane. A later polarization measurement in EPA glass found perpendicular emission. The comparisons span different media. This 12+12 Condon calculation omits spin-vibronic HT and higher-state borrowing. [Ethanol lifetime](https://doi.org/10.1063/1.1674576) · [Compiled radiative rate](https://doi.org/10.1021/acs.jctc.8b00841.s001) · [Polarization reappraisal](https://www.sciencedirect.com/science/article/abs/pii/S0301010405001928)
+
+### Full-space response and analytic HT at 77 K
+
+Reusing the B3LYP/def2-SVP endpoints, the first-order response over 4,964 spatial occupied–virtual configurations per spin recovers the perpendicular intensity. The Condon rate is $0.0567612\ \mathrm{s}^{-1}$, equivalent to 17.62 s, with 94.61% of the rate polarized perpendicular to the plane. Higher opposite-reflection configurations supply this intensity through both singlet and triplet mixing. Such channels have also been identified in independent analyses of aromatic phosphorescence. [Higher-state intensity borrowing](https://doi.org/10.1016/S0166-1280(02)00035-0) · [Polarization reappraisal](https://doi.org/10.1016/j.chemphys.2005.04.047)
+
+Analytic HT along all 48 triplet modes increases the rate by 13.4% to $0.0643706\ \mathrm{s}^{-1}$, corresponding to 15.54 s, with 88.49% perpendicular emission. An independent harmonic third-moment calculation agrees with the integrated positive-photon rate within $8\times10^{-9}$ relative. The comparison uses the same 0.019 eV Gaussian width and native energies. The calculated double feature near 0.2 eV below the origin remains resolved where the hydrocarbon-glass trace has a broad band. The gas-phase 0–0 energy is 2.5545 eV, and the two radiative reference estimates above describe different condensed-phase conditions.
