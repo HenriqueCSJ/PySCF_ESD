@@ -1,22 +1,29 @@
 # PySCF ESD
 
-**Excited-state dynamics for vibronic absorption, fluorescence, and phosphorescence.** PySCF ESD connects electronic structure, state tracking, and vibrational dynamics. Start from a molecular XYZ for automatic closed-shell absorption and fluorescence, or use `pyscf.esd` to assemble spectra from prepared electronic states, spin–orbit response, or explicitly anharmonic surfaces.
+**Vibronic absorption, fluorescence, and phosphorescence with PySCF**
+
+PySCF ESD follows an electronic state from a molecular geometry to a spectrum with assigned vibrational lines, transition strengths, and radiative lifetimes. Run the closed-shell singlet workflow from an XYZ file, call it from an existing PySCF script, or assemble spectra from your own electronic surfaces and transition moments.
 
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-326E9A)](pyproject.toml)
 [![PySCF 2.15+](https://img.shields.io/badge/PySCF-2.15%2B-087E82)](https://pyscf.org/)
 [![GPL-3.0-only](https://img.shields.io/badge/License-GPL--3.0--only-596773)](LICENSE)
 [![Methods paper](https://img.shields.io/badge/Methods%20paper-PDF-913F62)](docs/paper/pyscf-esd.pdf)
 
-**[Quick start](#quick-start) · [Python](#use-as-a-pyscf-module) · [Choose a method](#default-and-options) · [Electronic structure and GPU](#electronic-structure-and-gpu) · [Nuclear dynamics](#nuclear-dynamics) · [Open shell and phosphorescence](#open-shell-spectra-and-phosphorescence) · [Numerical output](#output) · [Benchmarks and plots](#spectra-gallery) · [Methods paper](#methods-paper)**
+**Run** · [Install and run](#quick-start) · [PySCF module](#use-as-a-pyscf-module) · [Choose a model](#default-and-options) · [Read results](#output)
+
+**Methods** · [Absorption and fluorescence](#absorption-and-fluorescence) · [Phosphorescence](#phosphorescence) · [Electronic structure and GPU](#electronic-structure-and-gpu) · [Nuclear dynamics](#nuclear-dynamics)
+
+**Evidence** · [Spectra gallery](#spectra-gallery) · [Reproduce and extend](#reproduce-and-extend) · [Methods paper](#methods-paper)
 
 ## What PySCF ESD does
 
-- **Follows the excited state.** The geometry optimizer tracks the electronic root and transition-dipole phase across changing orbital bases. SCF stability, response residuals, and stationarity are checked separately.
-- **Builds both spectra from the two surfaces.** Adiabatic Hessian (AH) uses separate curvatures, Duschinsky rotation, and coherent Franck–Condon (FC) and Herzberg–Teller (HT) amplitudes. Vertical gradient (VG) provides a faster shared-curvature option.
-- **Uses analytic response where implemented.** The NVIDIA workflow supports analytic VG and AH for compatible models. Prepared GPU LR-TDA/C-PCM roots expose analytic excited-state Hessians and dipole derivatives. CPU DFT AH qualifies its local fits against direct gradients and dipoles.
-- **Treats large-amplitude motion explicitly.** Use automatic local DVR or VCI at qualified temperatures, a periodic torsion with a signed angle-dependent dipole and harmonic spectators, or prepared coupled coordinates for double wells and Fermi resonance.
-- **Computes spin-resolved transitions.** Prepared UKS/TDA gives spin-conserving optical transitions. SF-TDA provides spin-flip response. Full-space spin–orbit response gives phosphorescence with analytic gas-phase spin-vibronic HT for an isolated triplet.
-- **Reports physical observables.** Retrieve line assignments, oscillator strengths, radiative rates and lifetimes, Stokes shifts, relaxation energies, mode weights, and numerical coverage alongside the spectrum.
+- **Track the same state through relaxation.** The optimizer follows signed transition-density overlaps across changing orbital bases. Separate checks test SCF stability, response residuals, stationarity, and vibrational curvature.
+- **Explain band intensities.** Adiabatic Hessian (AH) uses the two relaxed minima, their separate curvatures, Duschinsky mode mixing, and coherent Franck–Condon (FC) and Herzberg–Teller (HT) amplitudes. Vertical gradient (VG) gives a lower-cost shared-curvature model.
+- **Choose the nuclear model.** Screen for local anharmonicity automatically, or supply a periodic rotor, a coupled double well, or a vibrational resonance. Prepared rotor calculations can use a torsion-dependent signed dipole and a harmonic spectator bath at finite temperature.
+- **Calculate spin-dependent emission.** Prepared UKS/TDA and SF-TDA provide open-shell optical properties. Spin–orbit state interaction and full-space first-order response supply polarized phosphorescence, including gas-phase analytic spin-vibronic HT.
+- **Export the underlying physics.** Get assigned sticks, broadened spectra, absolute oscillator strengths, radiative rates, lifetimes, relaxation energies, and mode-resolved contributions. The report records how each total was qualified.
+
+The benchmarks show what changes when the model changes. In CF₃NO, a periodic rotor restores the progression missed by the published harmonic treatment. In benzene, geometry and coherent HT amplitudes change different parts of the fluorescence spectrum. In naphthalene, full-space spin–orbit response recovers the dominant perpendicular emission. [Benchmarks and spectra](#spectra-gallery)
 
 ## Quick start
 
@@ -32,14 +39,14 @@ python -m pip install '.[workflow]'
 pyscf-esd examples/water.xyz --model vg --basis '6-31+g*' --output water.esd
 ```
 
-The [bundled water input](examples/water.xyz) exercises the fast VG path. It writes absorption and emission sticks, Gaussian profiles, numerical properties, and convergence diagnostics. For an automatic calculation, supply a closed-shell molecular XYZ in ångström and a new output directory.
+The [bundled water input](examples/water.xyz) exercises VG with a small basis. Look for `properties.json`, `diagnostics.json`, and the absorption and emission CSVs in `water.esd/`.
 
 ```bash
 pyscf-esd molecule.xyz --output run.esd
 pyscf-esd --help
 ```
 
-The automatic run starts from a single geometry, uses the same electronic model on both surfaces, and targets the first singlet at the relaxed ground-state geometry. The input XYZ atom order carries through to the reported modes and derivatives. [Installation and command-line options](docs/guide.md)
+Supply one closed-shell molecular geometry in ångström and a new output directory. The input atom order carries through to the reported modes and derivatives. The full CPU default was exercised on LiH from XYZ through both spectra. Its small input and expected output are in the [CPU default check](docs/validation.md#cpu-default-from-xyz). [Installation and command-line options](docs/guide.md)
 
 ## Use as a PySCF module
 
@@ -49,25 +56,32 @@ from pyscf import esd, gto
 mol = gto.M(atom="examples/water.xyz", basis="6-31+g*", unit="Angstrom")
 result = esd.run(mol, xc="pbe0", model="vg")
 
-absorption = result.spectra["absorption"]
-emission = result.physical_properties["spectra"]["emission"]
-if emission["coverage_status"] == "complete":
-    print("Radiative rate (s^-1)", emission["vacuum_radiative_rate_s_inverse"])
-    print("Radiative lifetime (s)", emission["vacuum_radiative_lifetime_s"])
+report = result.physical_properties["spectra"]
+print("Integrated absorption", report["absorption"]["population_weighted_oscillator_strength_sum"])
+print("Rate convergence", report["emission"]["positive_photon_moments"]["M3"]["status"])
 ```
 
 `esd.run` uses the geometry, named basis, and charge of a built PySCF molecule. Supply real atoms, spherical all-electron basis functions, and `spin=0` for the automatic singlet route. Choose `target_index=1` for the second singlet in Python, or `--state 2` on the CLI. Indices follow the roots at relaxed S₀ and the optimizer tracks the assigned state from there.
 
-Use `esd.Settings` with `esd.run_vibronic` to control the initial root count, grid level, SCF and response tolerances, or other advanced options. Lower-level APIs also accept derivatives, normal modes, dipoles, and model Hamiltonians from prepared data. [Python API](docs/api.md) · [Settings and units](docs/using-methods.md#choosing-the-level-of-theory)
+Use `esd.Settings` with `esd.run_vibronic` to control the initial root count, grid level, and SCF or response tolerances. This entry point takes Cartesian coordinates in bohr. Lower-level APIs accept derivatives, normal modes, dipoles, and model Hamiltonians from prepared data. [Python API](docs/api.md) · [Settings and units](docs/using-methods.md#choosing-the-level-of-theory)
 
 ## Default and options
 
-The default is **CPU · PBE0/def2-TZVPD · first singlet at S₀ · 0 K · absorption and emission · `auto`**.
+The default is **CPU · PBE0/def2-TZVPD · first singlet at the relaxed S₀ geometry · 0 K · absorption and emission · `auto`**. `auto` starts with the two relaxed surfaces, screens direct electronic cuts, and selects harmonic AH or a qualified local anharmonic model. A failed qualification gives an incomplete result with its reason.
 
-- **`auto`** relaxes both states, constructs an AH reference, and probes direct electronic cuts. It retains the harmonic model when the cuts qualify and uses a local anharmonic model when the evidence supports it. Thermal and transition coverage must qualify for each spectrum.
-- **`ah`** uses harmonic wells at the two relaxed minima. It includes Duschinsky rotation and the coherent FC and linear HT terms. Use it to compare the same harmonic approximation across molecules or electronic methods.
-- **`vg`** uses the S₀ curvature and the vertical excited-state gradient to define two harmonic wells of equal curvature. The CLI uses a constant transition dipole. Its emission comes from the emitting minimum of the VG model.
-- **Prepared AH or FC/HT controls** start from supplied endpoints. Turn off HT by omitting the dipole derivatives. Use an identity Duschinsky map in `harmonic_spectrum` to study mode mixing, with mode correspondence and displacements expressed in a consistent frame.
+| What you want to run | Entry point | Vibrational model or input |
+| --- | --- | --- |
+| Automatic two-surface calculation | `--model auto` or `esd.run(mol)` | AH with local anharmonic screening |
+| Harmonic limit at two minima | `--model ah` | Separate curvatures, Duschinsky, FC + linear HT |
+| Fast shared-curvature spectrum | `--model vg` | S₀ Hessian and vertical S₁ gradient, constant dipole in the CLI |
+| Analytic GPU calculation in vacuum or solution | `--backend gpu --model ah` with optional `--solvent` | Global-hybrid LR-TDA, equilibrium C-PCM when a solvent is supplied |
+| AS, FC-only, or a Duschinsky control | `esd.harmonic_spectrum` or `esd.run_prepared_ah` | Caller-supplied curvatures, coordinate map, and dipoles |
+| Explicit central differences at a supplied geometry | `esd.run_cpu_vibronic` | Opt-in numerical HT slopes or excited-state curvature |
+| Thermal rotor, double well, or Fermi resonance | [Prepared nuclear models](#prepared-rotors-double-wells-and-resonances) | Potentials and signed dipoles in selected coordinates |
+| UKS/TDA and SF-TDA | [Open-shell spectra](#open-shell-spectra-and-spin-flip) | Prepared unrestricted reference or spin-flip roots |
+| Triplet phosphorescence | [Phosphorescence](#phosphorescence) | Singlet–triplet SOC and prepared vibronic data |
+
+### Choose the functional, basis, state, and solvent
 
 ```bash
 # Choose the functional, basis, temperature, and linewidth
@@ -79,11 +93,16 @@ pyscf-esd molecule.xyz --state 2 --model vg --process absorption \
   --sigma 0 --output s2-absorption.esd
 
 # Analytic GPU AH in equilibrium C-PCM
-pyscf-esd molecule.xyz --backend gpu --model ah --solvent cyclohexane \
+pyscf-esd molecule.xyz --backend gpu --model ah --xc pbe0 --solvent cyclohexane \
   --temperature 298 --output gpu-solution.esd
 ```
 
-`--charge` sets the molecular charge. `--temperature` sets the thermal populations on the initial vibrational surface. `--sigma` is the Gaussian standard deviation in cm⁻¹. The first example uses 80 cm⁻¹ FWHM. `--max-quanta` and `--max-overlaps` set the vibrational budget. [Complete method guide](docs/using-methods.md) · [Choosing a solvent](docs/using-methods.md#choosing-a-solvent)
+- `--xc` and `--basis` accept PySCF names. CPU supports compatible LDA/GGA and hybrids, including range-separated functionals with the required XC derivatives. The automatic GPU backend requires a global hybrid. Both require supported all-electron references.
+- `--charge 2` requests a closed-shell dication. `--state 2` selects the second singlet at the relaxed S₀ geometry. The Python equivalent is `target_index=1`.
+- `--solvent` selects a named equilibrium C-PCM solvent on the GPU backend. The solvent affects the electronic surfaces and response. `--temperature` sets the Boltzmann populations of the initial vibrational surface for each direction.
+- `--sigma` is the Gaussian standard deviation in cm⁻¹. A value of 33.972872 gives 80 cm⁻¹ FWHM (0.00992 eV). Use `--sigma 0` for sticks. The default is 50 cm⁻¹. The adaptive solver targets 99.5% coverage with ceilings of 32 quanta and 250,000 overlaps. Change the ceilings with `--max-quanta` and `--max-overlaps`.
+
+[Level of theory](docs/using-methods.md#choosing-the-level-of-theory) · [Solvent and dielectric settings](docs/using-methods.md#choosing-a-solvent) · [CLI options](docs/guide.md#command-line-options)
 
 ## Electronic structure and GPU
 
@@ -93,21 +112,38 @@ pyscf-esd molecule.xyz --backend gpu --model ah --solvent cyclohexane \
 2. **Follow the excited state.** Transition-density overlap across the two AO bases determines the state correspondence and sign. The excited-state optimizer uses analytic gradients, checks the local root window, and records the electronic identity through the optimization.
 3. **Verify the endpoint.** Check stationarity and the projected vibrational curvatures. A geometry that looks chemically reasonable can still sit on a saddle or a different electronic root.
 4. **Handle orbital instabilities.** The stability checks distinguish an internal RKS saddle from instability toward spin breaking. An internal recovery follows the unstable rotation and verifies a lower, stable solution. A spin-breaking failure can trigger an explicitly selected alternative functional, starting the full workflow again. Each attempt records its actual electronic method and state.
-5. **Qualify the spectrum.** Grow the vibrational basis to check initial population and final dipole-strength coverage. An incomplete run reports the limiting check and can retain partial data for inspection.
+5. **Qualify the spectrum.** Grow the vibrational basis to check initial population and final dipole-strength coverage. The adaptive harmonic route also bounds the omitted positive-photon contributions to oscillator strength, radiative rate, and radiant power. An incomplete run reports the limiting check and can retain partial data for inspection.
 
-`--reference-checks all` extends orbital checks to the electronic points along the workflow. Repeat `--fallback-xc XC` to define an ordered set of electronic models to try. State assignment must be checked separately under each functional. [Stability, recovery, and root tracking](docs/methods.md#electronic-reference-and-state-tracking) · [Reading an incomplete result](docs/guide.md#troubleshoot-an-incomplete-result)
+The default checks orbital stability at the minima. Use `--reference-checks all` to extend the checks to sampled points. Repeat `--fallback-xc XC` to allow ordered, explicit restarts after spin-breaking instability. Each new functional gets its own state assignment at the relaxed ground geometry. [Stability, recovery, and root tracking](docs/methods.md#electronic-reference-and-state-tracking)
 
 The optimizer uses projected Cartesian BFGS with analytic gradients. A trial must pass the electronic checks and a downhill energy test after alignment. Failed trials shorten the step. The optimizer can restart with steepest descent, and the endpoint check can follow a downhill direction from a stationary point with negative curvature. The diagnostics count electronic and energy rejections separately. [Optimizer and minimum checks](src/pyscf_esd/electronic_workflow.py)
 
 ### Analytic derivatives by route
 
-- **CPU VG.** Uses the analytic ground-state Hessian and excited-state gradient at S₀. The production VG route uses zero displaced electronic geometries. The matched water control verified the S₁ response at the requested tolerance of 10⁻¹⁰.
+- **CPU VG.** Uses the analytic ground-state Hessian and excited-state gradient at S₀ without finite-difference derivative samples. The matched water control verified the S₁ response at the requested tolerance of 10⁻¹⁰.
 - **CPU DFT AH.** Uses analytic gradients, the analytic S₀ curvature, and checked local fits to displaced S₁ gradients and signed dipoles for excited-state curvature and HT. An optional fixed-geometry CPU API provides explicit central differences with signed root tracking and checkpointed samples.
 - **CPU RHF–CIS controls.** Conventional real, all-electron singlet CIS supports analytic S₁ Hessian and dipole derivatives. LiH and formaldehyde qualify this route against independent checks. These retained controls are distinct from the DFT workflow.
 - **GPU VG, AH, and automatic screening.** GPU VG supplies the analytic reference curvature and gradient. Supported GPU AH computes the two Hessians and phase-matched HT derivative analytically. `auto` can use the GPU for direct potential and dipole samples in the nuclear anharmonic model. Parts of assembly and the nuclear solver run on the host.
 - **Prepared GPU LR-TDA, vacuum or equilibrium C-PCM.** The analytic Hessian includes orbital and TDA root response, auxiliary-basis and density-fitting derivatives, moving XC quadrature, fourth-order semilocal XC terms, and the matching solvent response where applicable. The dipole derivative includes the occupied and excitation response in the tracked electronic phase.
 
-Use a compatible CUDA installation with GPU4PySCF. For analytic Hessians use supported global LDA/GGA functionals and spherical all-electron bases with the required DF and XC kernels. PBE0 has a built-in fourth XC derivative route. Other supported functionals can require a matching LibXC build via `PYSCF_ESD_LIBXC_LXC`. Backend and method support are checked when the response is requested. [GPU setup](docs/using-methods.md#gpu-vg-ah-and-automatic-screening) · [Explicit numerical derivative API](docs/using-methods.md#explicit-central-differences-on-cpu)
+GPU `vg`, `ah`, and `auto` use GPU4PySCF and require a supported global hybrid built from LDA/GGA components, such as PBE0, and a spherical all-electron basis. Install GPU4PySCF for your CUDA environment before running these models. AH and `auto` also require fourth-order XC derivatives. PBE0 has a built-in analytic expression. Other compatible functionals can require a matching LibXC build selected via `PYSCF_ESD_LIBXC_LXC`. A rejected GPU derivative is recorded as a workflow failure. [GPU setup and supported routes](docs/using-methods.md#gpu-vg-ah-and-automatic-screening) · [Prepared analytic C-PCM derivatives](docs/using-methods.md#analytic-derivatives-for-prepared-c-pcm-roots)
+
+### Opt into central differences on CPU
+
+Use the fixed-geometry Python route to differentiate signed dipoles or analytic excited-state gradients. Supply a stationary S₀ geometry. Existing samples may be reused via `checkpoint_dir`.
+
+```python
+from pyscf import esd
+
+def numerical_response(symbols, coordinates_bohr):
+    return esd.run_cpu_vibronic(
+        symbols, coordinates_bohr, esd.Settings(basis="def2-SVP", xc="pbe0"),
+        target_index=0, include_ht=True, compute_excited_hessian=True,
+        step_bohr=0.005, checkpoint_dir="fd-checkpoints",
+    )
+```
+
+The spectrum from this object uses VG curvatures. Its optional excited-state Hessian is evaluated at the supplied S₀ geometry. The relaxed S₁ Hessian needed for AH comes from the two-minimum route. [Central-difference inputs and outputs](docs/using-methods.md#explicit-central-differences-on-cpu)
 
 ### Prepared electronic endpoints
 
@@ -124,15 +160,30 @@ def endpoint_response(td_at_s0, root_at_s0, td_at_s1, root_at_s1, phase_at_s0):
 
 The Hessian is the total excited-state Hessian. The excitation energy and gradient are corrections to the matching restricted reference at S₁. Use `esd.adiabatic_hessian` to combine the two endpoint energies, gradients, and Cartesian Hessians. It removes relative translation and rotation, projects the vibrational spaces, and returns the normal modes, Duschinsky map, and 0–0 energy. Project the Cartesian dipole derivative onto the signed modes before passing it to `esd.run_prepared_ah`. [Prepared C-PCM derivatives](docs/using-methods.md#analytic-derivatives-for-prepared-c-pcm-roots) · [Complete AH assembly example](docs/using-methods.md#spectra-from-prepared-electronic-data)
 
-## Nuclear dynamics
+## Absorption and fluorescence
 
-### Harmonic absorption and fluorescence
+The automatic singlet workflow computes absorption from S₀ and fluorescence from the selected excited surface. Use `--process absorption`, `--process emission`, or `--process both`. For fluorescence, AH relaxes the tracked emitting state and evaluates its own curvature. VG uses the displaced minimum defined by its shared-curvature approximation.
+
+```bash
+pyscf-esd molecule.xyz --model ah --process emission --temperature 298 \
+  --sigma 33.972872 --output fluorescence.esd
+```
+
+### Harmonic vibronic amplitudes
 
 AH relates the two sets of mass-weighted coordinates by $Q_1=JQ_0+K$. The rotation $J$ mixes modes, and $K$ describes their displacement. The 0–0 gap includes both the difference between the electronic minima and the differential zero-point energy. The FC term comes from the vibrational overlap with the constant dipole. The HT term comes from the signed first-order variation of the dipole along the modes. The amplitudes add before squaring, so the report can resolve FC, HT, and their interference.
+
+$$
+\mathbf{M}_{if} = \boldsymbol{\mu}_0\langle f\mid i\rangle + \sum_k \left(\frac{\partial\boldsymbol{\mu}}{\partial Q_k}\right)_0 \langle f\mid Q_k\mid i\rangle
+$$
+
+Here $i$ and $f$ are the initial and final vibrational states, $Q_k$ is an initial normal coordinate, and $\boldsymbol{\mu}_0$ is the signed electronic transition dipole at the expansion geometry. An FC-only calculation omits the slopes. Use a consistently mapped identity $J$ to isolate the effect of Duschinsky rotation. To build an adiabatic shift (AS) model, use the two relaxed geometries and a shared curvature in a common frame. [Prepared harmonic controls](docs/using-methods.md#spectra-from-prepared-electronic-data)
 
 The absorption calculation starts on S₀. Fluorescence starts on the relaxed emitting surface, reverses the Duschinsky transformation, and uses that surface's thermal populations. Absorption oscillator strengths carry one power of photon energy. Spontaneous photon rates carry three. These differences affect spectral shape, dominant lines, and the Stokes separation.
 
 `harmonic_spectrum` returns assigned sticks from the selected basis. `thermal_harmonic_spectrum` evaluates broadened all-quanta FC/HT profiles with a characteristic function, including complex input amplitudes for spin–orbit spectra. It can return reduced dipole-strength density for comparison and the separate photon-weighted moment needed for absolute rates. [Harmonic theory and API](docs/methods.md#harmonic-vibronic-model) · [Thermal profiles](docs/numerical-results.md#thermal-profiles-and-prepared-rotors)
+
+## Nuclear dynamics
 
 ### Automatic local anharmonicity at finite temperature
 
@@ -156,6 +207,7 @@ pyscf-esd molecule.xyz --model auto --temperature 298 --process both \
 python examples/validate_anharmonic_rotor.py
 
 # Molecular rotor from a caller-supplied phase-tracked archive
+python -m pip install matplotlib
 python examples/assemble_separable_rotor.py cuts.json --output rotor-298 \
   --temperature 298 --fwhm 80 --dvr-grids 256 512
 ```
@@ -166,15 +218,17 @@ python examples/assemble_separable_rotor.py cuts.json --output rotor-298 \
 
 [Periodic rotor API and runnable Python example](docs/using-methods.md#thermal-torsion) · [Coupled-mode APIs](docs/api.md#reduced-coupled-vibrational-models) · [Vibrational state mixing](src/pyscf_esd/vibrational_mixing.py)
 
-## Open-shell spectra and phosphorescence
-
-### Unrestricted and spin-flip response
+## Open-shell spectra and spin flip
 
 - **Prepared unrestricted DFT.** `analytic_uks_triplet_endpoint` returns the energy, analytic gradient, optional fixed-quadrature Hessian, orbital residual, and ⟨S²⟩ of a converged high-spin triplet. The supported gas-phase LDA/GGA route can use CPU PySCF or GPU4PySCF. Use consistent quadrature conventions when comparing geometries and curvatures.
 - **Spin-conserving optical spectra.** `unrestricted_tda_vertical_spectrum` gives absorption or reverse emission from assigned UKS/TDA roots. It uses the reference's $M_S$ sector and exposes the reference spin diagnostic. The native unrestricted root's total spin requires a separate assignment.
 - **Spin-flip TDA.** `solve_spin_flip_tda` starts from a converged high-spin GPU UKS reference. It exposes fixed-geometry root energies, orbital-relaxed interstate dipoles, and analytic state gradients through `spin_flip_tda_gradient`. Differences of the physical-root energies give the optical gap. A geometry-to-spectrum spin-flip workflow uses caller-tracked states, qualified curvatures, and the prepared spectral API.
 
 [Open-shell and triplet APIs](docs/phosphorescence.md) · [Spin-flip Python examples and index conventions](docs/using-methods.md#spin-flip-tda-on-gpu)
+
+## Phosphorescence
+
+Phosphorescence here is triplet-to-singlet emission enabled by spin–orbit coupling. Start from prepared electronic states at the emitting geometry. For a vibronic spectrum, also supply both relaxed surfaces and the triplet-to-singlet 0–0 energy. The [phosphorescence guide](docs/phosphorescence.md) follows the calculation from the electronic input to a thermal spectrum and polarized rates.
 
 ### Spin–orbit intensity borrowing
 
@@ -190,37 +244,67 @@ def vertical_phosphorescence(rks_at_triplet_minimum):
     return matrices.phosphorescence(triplet_root=0, temperature_kelvin=77)
 ```
 
-For weak SOC, `tda_soc_response` replaces the root-window sum with singlet and triplet resolvents over the occupied–virtual space. Its analytic gas-phase HT route differentiates the spin–orbit and dipole integrals, relaxed orbitals and density, both response operators, and the isolated lowest triplet. The two borrowing paths add coherently. The model uses the spin-free triplet degeneracy and first-order SOC. Use `run_prepared_phosphorescence` when supplying state-interaction matrices and AH data.
+For weak SOC, `tda_soc_response` solves for singlet and triplet intensity borrowing over the occupied–virtual space. It checks that the target triplet eigenpair is converged and that the shifted operators have the required spectral margins, including directions that can be dark to the optical response. The two borrowing paths add coherently.
+
+The gas-phase HT route differentiates the spin–orbit and dipole integrals, relaxed orbitals and density, both response operators, and the isolated lowest triplet. This first-order model uses the spin-free triplet degeneracy. Use `run_prepared_phosphorescence` when supplying state-interaction results and AH data. Use the [full-space profile example](docs/phosphorescence.md#full-space-first-order-soc-and-analytic-herzbergteller-coupling) to combine the analytic moments and slopes with a finite-temperature harmonic profile.
 
 The SOMF implementation contracts Coulomb and exchange terms directly over AO shells. The derivative path batches nuclear directions and checks the individual orbital-response residuals. Projected adjoints supply the root and response changes needed for dipole slopes. The calculation evaluates those terms at one geometry. [SOMF derivative implementation](src/pyscf_esd/somf_derivatives.py) · [Orbital and TDA response](src/pyscf_esd/tda_nuclear_response.py)
 
 [Explicit SOC assembly](docs/phosphorescence.md#automatic-soc-and-interstate-dipoles) · [Full-space response and thermal spectrum](docs/phosphorescence.md#full-space-first-order-soc-and-analytic-herzbergteller-coupling) · [Prepared vibronic phosphorescence](docs/phosphorescence.md#prepared-vibronic-phosphorescence)
 
+### Get the phosphorescence spectrum and lifetime
+
+Pass a prepared AH model and a `PhosphorescenceResult` from SOC state interaction to `run_prepared_phosphorescence`. The example below uses constant mixed dipoles. Supply `dipole_derivatives_au` in the triplet normal coordinates to include linear spin-vibronic HT.
+
+```python
+from pyscf import esd
+
+def vibronic_phosphorescence(ah_parameters, soc_result, origin_hartree):
+    result = esd.run_prepared_phosphorescence(
+        ah_parameters, soc_result,
+        lowest_sublevel_00_hartree=origin_hartree, temperature_kelvin=77,
+    )
+    report = result.physical_properties
+    print("Radiative rate (s^-1)", report["vacuum_radiative_rate_s_inverse"])
+    print("Radiative lifetime (s)", report["vacuum_radiative_lifetime_s"])
+    return result
+```
+
+`result.sublevel_spectra` contains the assigned sticks for each triplet sublevel. `result.sublevel_populations` contains their thermal weights. `result.physical_properties` includes the sublevel 0–0 energies and contributions to the total rate. [Naphthalene phosphorescence benchmark](#phosphorescence-benchmark)
+
 ## Output
 
 ### Files from the command line
 
-- **`properties.json`** holds integrated strengths and physical observables from the retained transitions.
-- **`absorption_sticks.csv` and `emission_sticks.csv`** hold assignments, energy, populations, dipole strengths, and the line oscillator strength or Einstein A coefficient.
-- **`absorption_profile.csv` and `emission_profile.csv`** hold the optional Gaussian-broadened relative photon-weighted density. The CSV energy axis is in cm⁻¹. The code below converts the axis and the density to eV.
-- **`diagnostics.json`** records the electronic reference, state and phase checks, derivative route, nuclear model, convergence, and separate coverage by direction. A known incomplete run can return partial sticks and a partial numerical summary.
+| File | What it contains |
+| --- | --- |
+| `diagnostics.json` | Run status, requested and effective method, state tracking and phase, derivative route, and coverage by direction |
+| `properties.json` | Numerical observables from the retained transitions and diagnostics available for the chosen model |
+| `absorption_sticks.csv`, `emission_sticks.csv` | Assignments, energies, populations, signed Cartesian dipoles where available, and line oscillator strengths or Einstein A coefficients |
+| `absorption_profile.csv`, `emission_profile.csv` | Optional Gaussian-broadened relative photon-weighted density per cm⁻¹ |
 
-### Read rates, lifetimes, and line strengths
+When the workflow records an incomplete result, the CLI exits with code 2. Check `diagnostics.json` first. Available partial sticks and profiles carry `_partial` in the filename. In Python, catch `esd.WorkflowIncomplete` and inspect `error.diagnostics` and `error.partial_spectra`. If a vibrational budget stopped the calculation, use the reported population, dipole closure and omitted-moment bounds to identify which cutoff limited the result. [Troubleshooting](docs/guide.md#troubleshoot-an-incomplete-result)
+
+### Read fluorescence rates and line strengths
 
 ```python
 import json
 from pathlib import Path
 
 report = json.loads(Path("water.esd/properties.json").read_text(encoding="utf-8"))
-for direction, spectrum in report["spectra"].items():
-    print(direction, spectrum["coverage_status"])
-emission = report["spectra"]["emission"]
-if emission["coverage_status"] == "complete":
+emission = report["spectra"].get("emission", {})
+rate_status = emission.get("positive_photon_moments", {}).get("M3", {}).get("status", "unavailable")
+print("Radiative rate convergence", rate_status)
+if rate_status == "complete":
     print("k_f (s^-1)", emission["vacuum_radiative_rate_s_inverse"])
-    print("Radiative lifetime (s)", emission["vacuum_radiative_lifetime_s"])
+    lifetime = emission["vacuum_radiative_lifetime_s"]
+    if lifetime is not None:
+        print("Radiative lifetime (ns)", 1e9 * lifetime)
 ```
 
-The equivalent Python report is `result.physical_properties`. The vacuum rate is the sum of Einstein coefficients weighted by the emitting vibrational populations. Its reciprocal is the radiative lifetime for a positive rate. The measured decay time and quantum yield also depend on nonradiative processes. The vacuum prefactor applies to the reported rate even when the electronic calculation uses C-PCM.
+The same report is available as `result.physical_properties`. The vacuum rate is $k_f=\sum_i p_i\sum_f A_{if}$, where $p_i$ is the population of emitting vibrational state $i$ and $A_{if}$ is the Einstein A coefficient. The reciprocal of a positive rate gives the model radiative lifetime. The vacuum prefactor also applies to C-PCM electronic data. Measured decay times and quantum yields additionally depend on nonradiative channels.
+
+`positive_photon_moments` reports convergence separately for integrated oscillator strength (`M1`), radiative rate (`M3`) and radiant power (`M4`). The adaptive harmonic route reports a lower bound on the fraction each retained sum represents. Other models may report `unassessed` and still provide a sum over the retained lines.
 
 Where the model supplies them, the numerical reports include:
 
@@ -232,7 +316,7 @@ Where the model supplies them, the numerical reports include:
 
 ### Plot a profile in eV
 
-After running the quick start, install NumPy and Matplotlib if needed. Plot both files on their native energy axes.
+After running the quick start, install the optional plotting dependency with `python -m pip install matplotlib`. The conversion below puts both profiles on the native eV axis and rescales the density to preserve its area. For relative shapes, normalize the two directions separately because absorption and emission use different photon weights. To align a comparison, add the reported shift to the displayed energy axis and retain the native sticks and rate report.
 
 ```python
 from pathlib import Path
@@ -241,13 +325,12 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 cm_per_ev = 8065.54393734921
-for process in ("absorption", "emission"):
+figure, axes = plt.subplots(2, 1, layout="constrained")
+for ax, process in zip(axes, ("absorption", "emission"), strict=True):
     filename = Path("water.esd") / f"{process}_profile.csv"
     wavenumber, density = np.loadtxt(filename, delimiter=",", skiprows=1).T
-    plt.plot(wavenumber / cm_per_ev, density * cm_per_ev, label=process.capitalize())
-plt.xlabel("Photon energy (eV)")
-plt.ylabel("Relative photon-weighted density per eV")
-plt.legend()
+    ax.plot(wavenumber / cm_per_ev, density * cm_per_ev)
+    ax.set(title=process.capitalize(), xlabel="Photon energy (eV)", ylabel="Relative density per eV")
 plt.show()
 ```
 
@@ -255,11 +338,13 @@ plt.show()
 
 ## Spectra gallery
 
-The benchmark figures cover distinct observables and comparison protocols. The captions give the electronic model, linewidth, and alignment when they matter. Absolute-energy calculations and display alignments are kept distinct. The [molecular structure plate](docs/paper/pyscf-esd.pdf#page=2) shows the nine systems in the methods paper. Earlier figures retain their original cm⁻¹ or wavelength axes. The added control panels use eV.
+**[Absorption and fluorescence benchmarks](#absorption-and-fluorescence-benchmarks) · [Phosphorescence benchmark](#phosphorescence-benchmark) · [Numerical controls](#numerical-controls)**
 
-### Numerical controls before spectral comparisons
+The captions identify the model, linewidth, and energy reference. An aligned envelope tests band spacings and intensities. The native energy axis also tests absolute excitation and emission energies. Most gallery plots use eV. Selected archived controls retain their original axes. The [molecular structure plate](docs/paper/pyscf-esd.pdf#page=2) shows the nine systems in the methods paper.
 
-<details open>
+### Numerical controls
+
+<details>
 <summary><strong>Water · matched CPU and RTX 4070 Laptop GPU</strong></summary>
 
 Both PBE0/6-31+G* analytic VG paths produced **9,100 assigned lines in each direction** at 298.15 K and passed 16 numerical checks. The largest line-energy differences were **1.13 × 10⁻⁵ cm⁻¹** in absorption and **1.04 × 10⁻⁵ cm⁻¹** in emission. The maximum S₀ Hessian discrepancy was **7.04 × 10⁻¹¹ Hartree/bohr²**. Verification of a CPU orbital-response correction gave an S₁ residual of **8.51 × 10⁻¹¹** at the requested 10⁻¹⁰ tolerance. The production calculation uses analytic derivatives at the supplied ground geometry.
@@ -276,7 +361,14 @@ Add `--stencil` to the CPU control to compare the analytic gradient with indepen
 
 </details>
 
-<details open>
+<details>
+<summary><strong>LiH · CPU default from XYZ</strong></summary>
+
+CPU `auto` completed both spectra with PBE0/def2-TZVPD at 0 K. It optimized both surfaces, tracked the first singlet, and selected a direct one-mode DVR using 51 energy and dipole evaluations. The six retained sticks per direction cover **99.52%** and **99.83%** of the absorption and emission dipole strength. The report marks the energy-weighted moments `unassessed` for this anharmonic route. [Input and reproduction command](docs/validation.md#cpu-default-from-xyz)
+
+</details>
+
+<details>
 <summary><strong>Formaldehyde · analytic AH, Duschinsky rotation, and inversion</strong></summary>
 
 The RHF–CIS/6-31G(d) control compares the analytic polyatomic S₁ Hessian with independent gradient stencils. The maximum Cartesian discrepancy was **1.84 × 10⁻⁶ Hartree/bohr²**. Both harmonic profiles use the same signed linear HT model and Gaussian σ of 0.0062 eV. The matched-mode comparison holds the ground-frame displacement fixed while suppressing mode mixing.
@@ -291,7 +383,7 @@ Both plots use retained curves with the photon-energy axis expressed in eV and o
 
 </details>
 
-### Molecular comparisons and sensitivity studies
+### Absorption and fluorescence benchmarks
 
 <details open>
 <summary><strong>Benzene · n-hexane · geometry sensitivity and anharmonicity</strong></summary>
@@ -300,17 +392,17 @@ Both plots use retained curves with the photon-energy axis expressed in eV and o
   <img src="docs/benchmarks/benzene.svg" alt="Six-membered aromatic ring of benzene" width="155">
 </p>
 
-![Benzene at 298 K with the original and published CASPT2 equilibrium displacements](docs/benchmarks/benzene-geometry-control.png)
-
-Replacing the symmetric breathing displacement in the B3LYP5/TDA model with a published geometry-derived value changes the fluorescence peak ratio from **1.013 to 0.754**, versus **0.688** measured. The two calculations share the same Hessians, dipole model, origin, Lorentzian width and display shift. [Published CASPT2 geometries](https://doi.org/10.1063/1.480854)
-
 ![Benzene PBE harmonic and anharmonic absorption and fluorescence compared with published curves](docs/benchmarks/benzene.png)
 
-The PBE anharmonic model reproduces the three main fluorescence bands and reduces the profile RMSE by **38%** relative to the harmonic control at the same adjusted width. The PBE anharmonic RMSE is **0.063** in absorption and **0.081** in fluorescence, versus **0.085** and **0.071** for the published comparison. [de Souza et al., Fig. 3](https://doi.org/10.1063/1.5010895)
+At 298 K the PBE anharmonic model reproduces the three main fluorescence bands and reduces peak-normalized profile RMSE from **0.131 to 0.081**. Its absorption RMSE is **0.063**. The two PBE models use a Voigt profile with Lorentzian FWHM **0.019 eV** and Gaussian σ **0.008 eV** for absorption or **0.014 eV** for fluorescence. Their respective harmonic and anharmonic shifts are **−0.239 eV** and **−0.241 eV**, each applied to both directions. The published comparison has RMSE **0.085** in absorption and **0.071** in fluorescence at its retained widths. [de Souza et al., Fig. 3](https://doi.org/10.1063/1.5010895)
+
+![Benzene at 298 K with the original and published CASPT2 equilibrium displacements](docs/benchmarks/benzene-geometry-control.png)
+
+The B3LYP5/TDA geometry control changes the symmetric breathing displacement to a value from published CASPT2 geometries. The ratio of the higher-energy fluorescence peak to the lower-energy peak goes from **1.013 to 0.754**, versus **0.688** measured. The two models share Hessians, dipoles, a Lorentzian FWHM of **0.0062 eV**, and a display shift of **−0.465 eV**. [Published CASPT2 geometries](https://doi.org/10.1063/1.480854)
 
 </details>
 
-<details open>
+<details>
 <summary><strong>Benzene in the gas phase · Fermi resonance and the signed ν₈ dipole</strong></summary>
 
 The ν₈ fundamental and the ν₁+ν₆ combination share the symmetry needed to mix in S₀. The experimental fluorescence peaks are at **36,475 and 36,494 cm⁻¹**, separated by **2.36 meV**. In the three-coordinate B3LYP/TDA replay, the coupled anharmonic pair is separated by **2.67 meV**. The replay also tests a harmonic model and removal of the explicit cubic coupling. The active-space computed origin and the measured-origin comparison are tracked separately.
@@ -328,7 +420,7 @@ The plotted Raman-parametrized control tests the effect of adding the direct ν�
 
 ![CF3NO absorption at 298 K against the measured trace and calculated fluorescence for PBE0 and spin-flip TDA](docs/benchmarks/cf3no-298k.png)
 
-The periodic CF₃ rotor recovers the low-frequency progression and broad absorption envelope after alignment to the measured jet origin. The peak-to-origin interval is **498.50 cm⁻¹**, compared with **499.90 cm⁻¹** measured. The PySCF curves at 298 K use Gaussian FWHM **80 cm⁻¹**, and fluorescence retains the computed photon-rate density. The article reports the reference-stability test and the native energy offset alongside this nuclear benchmark. [Hage et al.](https://doi.org/10.1021/acsomega.6c11480)
+The published harmonic calculation concentrates intensity in a few bands. Resolving the CF₃ torsion as a periodic rotor redistributes that intensity into a broad progression. After alignment to the measured jet origin, its PBE0/TDA absorption peak lies **498.50 cm⁻¹** above the origin, compared with **499.90 cm⁻¹** measured. The PySCF curves use Gaussian FWHM **0.0099 eV** (80 cm⁻¹), with a single display shift per model applied to both directions (**+0.094 eV** for PBE0/TDA and **+0.182 eV** for SF-TDA). The experimental trace is absorption. Fluorescence retains the computed photon-rate density. [Hage et al.](https://doi.org/10.1021/acsomega.6c11480)
 
 ![CF3NO gas-phase absorption oscillator strength and emission photon rate on the native axis at 0 K](docs/benchmarks/cf3no-0k.png)
 
@@ -338,9 +430,11 @@ The 0 K panel shows the native energy axis and absolute spectral densities with 
 
 The single-coordinate diagnostic holds the signed, angle-dependent dipole fixed and compares a local harmonic well with a periodic rotor at 298.15 K. Both curves in each direction share one normalization and Gaussian σ of 0.00062 eV. The room-temperature benchmark above adds the **11 harmonic spectators** and uses a distinct retained electronic input and linewidth.
 
-The **PBE0/TDA** model is the default in the archived CF₃NO replay. **SF-TDA** is selectable. The restricted PBE0 reference has a known spin-breaking instability, so the closer matched-origin envelope is evidence for the nuclear model under those inputs. At 298 K its native absorption maximum is **1.695 eV**, versus **1.789 eV** from the measured trace. The peak-to-origin interval agrees to **1.40 cm⁻¹** (0.17 meV). The published harmonic comparison places too much strength in a few bands. The periodic rotor captures the low-frequency structure and redistributes intensity across the envelope. [Published comparison](https://doi.org/10.1021/acsomega.6c11480) · [Reference checks](docs/validation.md#cf₃no-at-298-k) · [Replay driver](examples/replay_cf3no_thermal.py)
+The archived replay defaults to **PBE0/TDA** and offers **SF-TDA** with auxiliary UKS spectator curvatures. The restricted PBE0 reference has a known spin-breaking instability. Its native absorption maximum is **1.695 eV**, versus **1.789 eV** measured. The closer aligned envelope tests the periodic nuclear model under those inputs. [Reference checks and comparison settings](docs/validation.md#cf₃no-at-298-k) · [Replay driver](examples/replay_cf3no_thermal.py)
 
 ```bash
+# The plotting route for SF-TDA uses Matplotlib.
+python -m pip install matplotlib
 python examples/replay_cf3no_thermal.py PATH_TO_ARCHIVE --output replay-pbe0
 python examples/replay_cf3no_thermal.py PATH_TO_ARCHIVE --method sf-tda --output replay-sf
 ```
@@ -356,7 +450,7 @@ python examples/replay_cf3no_thermal.py PATH_TO_ARCHIVE --method sf-tda --output
 
 ![Calculated and measured absorption and fluorescence of the quinine dication](docs/benchmarks/quinine.png)
 
-The broadened absorption maximum is **3.606 eV** before alignment, compared with **3.568 eV** in the experiment. A display shift of **−0.496 eV** brings the calculated fluorescence envelope close to the measured one. The unshifted peak separation in the energy-domain plot is **0.41 eV**, compared with **0.85 eV** measured. Retesting the widths retained **0.496 eV** for absorption and **0.397 eV** for fluorescence. The 50-atom pilot used one conformer in implicit water. Its relaxed S₁ geometry met the force criterion and gave stable successive spectra. The strict geometry convergence cycle was incomplete. [PhotochemCAD measurement in 0.5 M aqueous H₂SO₄](https://omlc.org/spectra/PhotochemCAD/html/081.html)
+The broadened absorption maximum is **3.606 eV** before alignment, compared with **3.568 eV** in the experiment. The display shifts are **+0.081 eV** for absorption and **−0.496 eV** for fluorescence. The respective Gaussian FWHM values are **0.496 eV** and **0.397 eV**. The unshifted separation is **0.41 eV**, compared with **0.85 eV** measured. This 50-atom, one-conformer calculation met the S₁ force criterion. The strict geometry convergence cycle was incomplete. [PhotochemCAD measurement in 0.5 M aqueous H₂SO₄](https://omlc.org/spectra/PhotochemCAD/html/081.html)
 
 The native fluorescence maximum is **3.199 eV**, versus **2.716 eV** measured on the energy-domain plot. The two endpoint dipoles use different response conditions as documented in the paper. The comparison reports both the aligned shape and the native peak separation.
 
@@ -369,9 +463,9 @@ The native fluorescence maximum is **3.199 eV**, versus **2.716 eV** measured on
   <img src="docs/benchmarks/cyanoanthracene.svg" alt="Chemical structure of anthracene-9-carbonitrile" width="240">
 </p>
 
-![Calculated and measured spectra of 9-cyanoanthracene at three Gaussian linewidths on native and aligned axes](docs/benchmarks/cyanoanthracene-widths.png)
+![Calculated and measured absorption and fluorescence of 9-cyanoanthracene on native and aligned energy axes](docs/benchmarks/cyanoanthracene.png)
 
-The wavelength-domain comparison shows Gaussian FWHM values of **80**, **147**, and **400 cm⁻¹**, both on the native axis and with a common **+203 cm⁻¹** shift. The red absorption band carries too much relative intensity at all three linewidths. [Boens et al., supporting Fig. S1-D, CC BY-NC 4.0](https://doi.org/10.1021/ac062160k.s001)
+The AS–FC profile in eV uses a common **+0.025 eV** display shift. In the separate wavelength-domain control, the red absorption band carries too much relative intensity at Gaussian FWHM values of **80**, **147**, and **400 cm⁻¹**. [Three-width comparison](docs/benchmarks/cyanoanthracene-widths.png) · [Boens et al., supporting Fig. S1-D, CC BY-NC 4.0](https://doi.org/10.1021/ac062160k.s001)
 
 The independent solvated **analytic AH+HT** comparison retains the same relaxed geometries and uses separate curvatures. At **0.0099 eV FWHM** on the native axis, the leading fluorescence band-area ratio changes from **0.69** with AS–FC to **1.37** with AH+HT, compared with **1.21** measured. The native peak positions move farther from experiment. The control separates the gain in relative intensities from the change in energy placement. [Methods paper and quantitative benchmark](docs/paper/pyscf-esd.pdf)
 
@@ -403,23 +497,25 @@ The analytic excited-state bond curvature is **0.020890425 Hartree/bohr²**. The
 
 </details>
 
+<details>
+<summary><strong>Naphthalene · cyclohexane · fluorescence at 298 K</strong></summary>
+
+The cyclohexane fluorescence study probes mixing of the two low-lying singlets using one promoter coordinate and 47 harmonic spectators. The conditional radiative rate falls from **2.01 × 10⁸ s⁻¹** in the linear one-state model to **2.27 × 10⁷ s⁻¹** with explicit B3LYP5 two-state nuclear coupling. Substituting ωB97X active-mode energies and dipoles at the retained geometries gives **6.87 × 10⁶ s⁻¹**, versus about **2.40 × 10⁶ s⁻¹** measured. [Methods paper](docs/paper/pyscf-esd.pdf) · [Experimental comparison](https://doi.org/10.1063/1.5010895)
+
+</details>
+
+### Phosphorescence benchmark
+
 <details open>
 <summary><strong>Naphthalene · 77 K · spin–orbit phosphorescence</strong></summary>
 
 ![Naphthalene phosphorescence at 77 K in gas and in a C-PCM solvent control, compared with hydrocarbon glass](docs/benchmarks/naphthalene-phosphorescence.png)
 
-Full-space spin–orbit response recovers the dominant perpendicular emission. Gas-phase AH with analytic spin-vibronic Herzberg–Teller coupling predicts a **15.54 s radiative lifetime** and **88.5% perpendicular emission**. Two ground-state ring fundamentals produce the calculated split. The matched Condon dielectric control leaves their separation near **0.025 eV** and shortens the radiative lifetime from **17.62 to 15.84 s**. The panels use each spectrum's own 0–0 energy as the origin for energy loss. [Benchmark and numerical data](docs/phosphorescence.md#naphthalene-benchmark) · [Glass spectrum](https://pstorage-acs-6854636.s3.amazonaws.com/6569049/jp6b07709_si_001.pdf)
+Full-space spin–orbit response recovers the dominant perpendicular emission. Gas-phase AH with analytic spin-vibronic Herzberg–Teller coupling predicts a **15.54 s radiative lifetime** and **88.5% perpendicular emission**. Two ground-state ring fundamentals produce the calculated split. The matched Condon dielectric control leaves their separation near **0.025 eV** and shortens the radiative lifetime from **17.62 to 15.84 s**. The panels show peak-normalized reduced intensity, with energy loss measured from each spectrum's own 0–0 energy. [Benchmark and numerical data](docs/phosphorescence.md#naphthalene-benchmark) · [Glass spectrum](https://pstorage-acs-6854636.s3.amazonaws.com/6569049/jp6b07709_si_001.pdf)
 
-The original 12+12 Condon window gives **0.00260 s⁻¹**. Including all **4,964 spatial configurations per spin** raises it to **0.05676 s⁻¹** and recovers the perpendicular channel. Gas-phase HT raises the rate further to **0.06437 s⁻¹**. At the same Gaussian width of 0.0186 eV, mean dielectric response shifts each of the underlying fundamentals by less than 3 cm⁻¹. Using the independently read experimental 0–0 linewidth in a resolution check merges the calculated peaks, while the merged band remains about 0.013 eV farther from the origin than measured. The C-PCM comparison uses the Condon model and a methylcyclohexane dielectric proxy.
+The original 12+12 Condon window gives **0.00260 s⁻¹**. Including all **4,964 spatial configurations per spin** raises it to **0.05676 s⁻¹** and recovers the perpendicular channel. Gas-phase HT raises the rate further to **0.06437 s⁻¹**. At the same Gaussian FWHM of **0.0186 eV**, mean dielectric response shifts each of the underlying fundamentals by less than 3 cm⁻¹. Using the independently read experimental 0–0 linewidth in a resolution check merges the calculated peaks, while the merged band remains about 0.013 eV farther from the origin than measured. The C-PCM comparison uses the Condon model and a methylcyclohexane dielectric proxy.
 
 [Gas Condon profile](docs/benchmarks/naphthalene/gas-condon-77k.csv.gz) · [Gas analytic HT profile](docs/benchmarks/naphthalene/gas-ht-77k.csv.gz) · [C-PCM Condon profile](docs/benchmarks/naphthalene/pcm-condon-77k.csv.gz) · [Line assignments](docs/benchmarks/naphthalene/gas-assignments.json) · [Solvent and linewidth diagnostics](docs/benchmarks/naphthalene/glass-diagnostic.json)
-
-</details>
-
-<details>
-<summary><strong>Naphthalene fluorescence at 298 K · singlet-state intensity borrowing</strong></summary>
-
-The cyclohexane fluorescence study probes mixing of the two low-lying singlets using one promoter coordinate and 47 harmonic spectators. The conditional radiative rate falls from **2.01 × 10⁸ s⁻¹** in the linear one-state model to **2.27 × 10⁷ s⁻¹** with explicit B3LYP5 two-state nuclear coupling. Substituting ωB97X active-mode energies and dipoles at the retained geometries gives **6.87 × 10⁶ s⁻¹**, versus about **2.40 × 10⁶ s⁻¹** measured. This is a separate benchmark from the 77 K triplet. [Methods paper](docs/paper/pyscf-esd.pdf) · [Experimental comparison](https://doi.org/10.1063/1.5010895)
 
 </details>
 
@@ -452,7 +548,7 @@ Start with the [validation guide](docs/validation.md) to pick a replay. Water an
 
 - [Workflow and electronic preparation](src/pyscf_esd/workflow.py), [state tracking](src/pyscf_esd/state_tracking.py), and [CPU electronic response](src/pyscf_esd/cpu.py)
 - [GPU VG](src/pyscf_esd/gpu.py), [analytic molecular Hessian](src/pyscf_esd/molecular_tda_hessian.py), [transition dipole derivatives](src/pyscf_esd/tda_dipole.py), and [SF-TDA](src/pyscf_esd/gpu_spin_flip.py)
-- [Harmonic sticks](src/pyscf_esd/harmonic.py), [thermal harmonic and separable profiles](src/pyscf_esd/thermal_separable.py), [anharmonic DVR](src/pyscf_esd/anharmonic_dvr.py), and [periodic phase and dipole sampling](src/pyscf_esd/anharmonic_sampling.py)
+- [Harmonic sticks](src/pyscf_esd/harmonic.py), [photon-moment convergence](src/pyscf_esd/harmonic_moments.py), [thermal harmonic and separable profiles](src/pyscf_esd/thermal_separable.py), [anharmonic DVR](src/pyscf_esd/anharmonic_dvr.py), and [periodic phase and dipole sampling](src/pyscf_esd/anharmonic_sampling.py)
 - [Prepared SOC matrices](src/pyscf_esd/pyscf_soc.py), [full-space spin–orbit response](src/pyscf_esd/tda_soc_response.py), [vibronic phosphorescence](src/pyscf_esd/phosphorescence.py), and [physical observables](src/pyscf_esd/spectral_properties.py)
 
 ## Methods paper

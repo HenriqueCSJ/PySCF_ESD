@@ -7,8 +7,14 @@ from numbers import Integral, Real
 import numpy as np
 from numpy.typing import NDArray
 
+from .cpu import ElectronicConvergenceError, _checked_array, _stability_curvature
 from .harmonic import _real_array
 from .pyscf_soc import _breit_pauli_somf_ao, _read_roots, _validate_reference
+
+
+_SOC_EIGENPAIR_TOLERANCE = 1e-7  # Hartree
+_SOC_RESOLVENT_MARGIN = 1e-7
+_SOC_TRIPLET_GAP = 1e-5
 
 
 @dataclass(frozen=True)
@@ -64,6 +70,67 @@ def _excited_operator_action(operator, q):
     return q @ operator[:, nocc:, nocc:].swapaxes(-1, -2) - operator[:, :nocc, :nocc].swapaxes(-1, -2) @ q
 
 
+def _project_triplet_response(energy, q, action):
+    flat_q = q.ravel()
+
+    def project(vectors):
+        return vectors - (vectors @ flat_q)[:, None] * flat_q
+
+    def projected_action(vectors):
+        orthogonal = project(vectors)
+        return project(action(orthogonal) - energy * orthogonal) + (vectors - orthogonal)
+
+    return project, projected_action
+
+
+def _require_spectral_margin(action, diagonal, margin, description):
+    # The stability eigensolver uses independent full-support starts for
+    # matrix-free operators, so optical and SOC selection rules do not limit
+    # the space explored by the spectral check.
+    try:
+        evidence = _stability_curvature(
+            lambda vector: action(vector[None])[0], diagonal, np.nextafter(margin, np.inf),
+            block_operator=action,
+        )
+    except ElectronicConvergenceError as error:
+        raise ValueError(f"SOC response could not resolve the lowest {description} eigenvalue") from error
+    if evidence.below_threshold_direction is not None:
+        raise ValueError(
+            f"SOC response requires the lowest {description} eigenvalue to exceed "
+            f"{margin:.3g} Hartree (found a direction at {evidence.curvature:.3g} Hartree)"
+        )
+
+
+def _qualify_soc_response(energy, q, singlet_action, singlet_diag, triplet_action, triplet_diag, *, derivatives):
+    flat_q = q.ravel()
+    try:
+        image = _checked_array(triplet_action(flat_q[None]), (1, q.size), "triplet TDA product")[0]
+    except ElectronicConvergenceError as error:
+        raise ValueError("SOC response could not verify the selected triplet eigenpair") from error
+    residual = np.linalg.norm(image - energy * flat_q)
+    if residual > _SOC_EIGENPAIR_TOLERANCE:
+        raise ValueError("the triplet eigenpair residual exceeds 1e-7 Hartree")
+
+    _require_spectral_margin(
+        lambda vectors: singlet_action(vectors) - energy * vectors, singlet_diag - energy,
+        _SOC_RESOLVENT_MARGIN + residual, "shifted singlet TDA",
+    )
+    if not derivatives:
+        _require_spectral_margin(triplet_action, triplet_diag, _SOC_RESOLVENT_MARGIN, "triplet TDA")
+        return
+
+    rayleigh = float(flat_q @ image)
+    coupling = np.linalg.norm(image - rayleigh * flat_q)
+    if rayleigh - coupling <= _SOC_RESOLVENT_MARGIN:
+        raise ValueError("SOC response requires a positive triplet TDA operator")
+    if q.size > 1:
+        # Removing the off-diagonal block between q and its complement
+        # changes each triplet eigenvalue by at most the block norm.
+        margin = _SOC_TRIPLET_GAP + abs(rayleigh - energy) + 2 * coupling
+        _, projected_action = _project_triplet_response(energy, q, triplet_action)
+        _require_spectral_margin(projected_action, triplet_diag - energy, margin, "projected triplet TDA")
+
+
 def _response_inputs(triplet_tda, root):
     from pyscf.tdscf.rks import TDA
 
@@ -74,8 +141,10 @@ def _response_inputs(triplet_tda, root):
     if getattr(triplet_tda, "wfnsym", None) is not None:
         raise ValueError("full-space SOC response requires TDA without a symmetry filter")
     q = amplitudes[0]
-    if not np.isclose(np.linalg.norm(q), 1., atol=1e-8, rtol=0.):
+    length = np.linalg.norm(q)
+    if not np.isclose(length, 1., atol=1e-8, rtol=0.):
         raise ValueError("the selected triplet TDA root must be normalized")
+    q = q / length
     coeff = np.column_stack((occupied, virtual))
     mol = mf.mol
     with mol.with_common_origin(np.zeros(3)):
@@ -132,15 +201,7 @@ def _derivative_adjoint(energy, q, dipole, somf, x, y,
     # antisymmetric particle/hole action, so the transpose changes its sign.
     c = np.stack([-_excited_operator_action(somf, local.reshape(q.shape)) / 2 for local in x], axis=1)
     c += np.stack([_excited_operator_action(dipole, local.reshape(q.shape)) for local in y])
-    flat_q = q.ravel()
-
-    def project(vectors):
-        return vectors - (vectors @ flat_q)[:, None] * flat_q
-
-    def projected_action(vectors):
-        orthogonal = project(vectors)
-        return project(triplet_action(orthogonal) - energy * orthogonal) + (vectors - orthogonal)
-
+    project, projected_action = _project_triplet_response(energy, q, triplet_action)
     u, qr = _solve_response(projected_action, triplet_diag - energy,
                             project(c.reshape(9, -1)), tolerance, max_cycles)
     return w, v, project(u).reshape(3, 3, -1), (sr, tr, qr)
@@ -164,12 +225,15 @@ def tda_soc_response(triplet_tda, root=0, *, response_tolerance=1e-8, max_cycles
 
     The RKS reference and target triplet must be solved. Both TDA resolvents
     must be positive (stable triplet and a target below the singlet manifold).
+    The target eigenpair and low end of the resolvent spectra are checked
+    independently of the dipole and SOC response vectors.
     The transition is evaluated in a Cartesian basis of the degenerate
     spin-free triplet. Spin–orbit shifts and spin–spin splittings are outside
     this first-order dipole model.
     Supply nuclear directions (coordinate, atom, Cartesian displacement in
     bohr) to differentiate both intensity-borrowing paths analytically.
-    The analytic derivative uses the lowest isolated spatial triplet root.
+    The analytic derivative uses the lowest spatial triplet root with a gap
+    greater than 1e-5 Hartree to the rest of the triplet manifold.
     """
     if (isinstance(response_tolerance, (bool, np.bool_)) or not isinstance(response_tolerance, Real)
             or not isfinite(response_tolerance)
@@ -186,13 +250,7 @@ def tda_soc_response(triplet_tda, root=0, *, response_tolerance=1e-8, max_cycles
         if root != 0:
             raise ValueError("analytic SOC dipole derivatives require the lowest spatial triplet")
     coefficients, dipole_ao, energy, q, dipole, somf, sa, sd, ta, td = _response_inputs(triplet_tda, root)
-    if directions is not None:
-        if q.size > 1:
-            _, energies, _ = _read_roots(triplet_tda, (0, 1), q.shape, singlet=False)
-            if energies[1] - energies[0] <= 1e-5:
-                raise ValueError("analytic SOC dipole derivatives require an isolated spatial triplet")
-        if np.linalg.norm(ta(q.reshape(1, -1)) - energy * q.ravel()) > 1e-7:
-            raise ValueError("the triplet eigenpair residual exceeds 1e-7 Hartree")
+    _qualify_soc_response(energy, q, sa, sd, ta, td, derivatives=directions is not None)
     emitting, ground, residuals, x, y = _full_space_moments(
         energy, q, dipole, somf, sa, sd, ta, td, response_tolerance, max_cycles,
     )

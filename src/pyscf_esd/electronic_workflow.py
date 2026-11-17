@@ -557,7 +557,7 @@ def _estimate_dipole(session: _ElectronicSession, center: _TrackedPoint, modes: 
 
 
 def _check_ht_zero_point(session, center, modes, frequencies, derivatives) -> dict:
-    """Check the dominant HT mode when its vibrational quantum spans an electronic gap."""
+    """Check every material HT mode whose vibrational quantum spans the electronic gap."""
     if not frequencies.size:
         return {"status": "not_triggered"}
     excitation = center.point.excitation_energies_hartree
@@ -565,28 +565,39 @@ def _check_ht_zero_point(session, center, modes, frequencies, derivatives) -> di
     gap = float(np.min(abs(neighbors - excitation[center.root]), initial=np.inf))
     amplitude = 1.0 / np.sqrt(2.0 * frequencies)
     dipole_changes = amplitude[:, None] * derivatives
-    mode = int(np.argmax(np.linalg.norm(dipole_changes, axis=1)))
-    if gap > frequencies[mode] or np.linalg.norm(dipole_changes[mode]) < _DIPOLE_ABSOLUTE_TOLERANCE_AU:
+    change_norms = np.linalg.norm(dipole_changes, axis=1)
+    eligible = np.flatnonzero((frequencies >= gap) & (change_norms >= _DIPOLE_ABSOLUTE_TOLERANCE_AU))
+    if not eligible.size:
         return {"status": "not_triggered"}
 
-    step = amplitude[mode] * modes[mode]
-    slope = dipole_changes[mode]
-    observed = np.stack([
-        session.isolated_point(center.coordinates + sign * step, center).dipole - center.dipole
-        for sign in (-1, 1)
-    ])
-    error = float(np.max(np.linalg.norm(observed - np.stack((-slope, slope)), axis=1)))
-    scale = float(np.max(np.linalg.norm(observed, axis=1)))
-    limit = _DIPOLE_ABSOLUTE_TOLERANCE_AU + _DIPOLE_RELATIVE_TOLERANCE * scale
-    if error > limit:
-        raise ElectronicConvergenceError(
-            f"linear HT fails the zero-point displacement check for mode {mode + 1} "
-            f"(dipole error {error:.3g} e·bohr, limit {limit:.3g} e·bohr, "
-            f"neighboring root gap {gap:.3g} Hartree). A coordinate-dependent dipole or "
-            "coupled electronic states are needed to qualify the spectrum and radiative rate."
-        )
-    return {"status": "passed", "ground_mode_index": mode, "electronic_gap_hartree": gap,
-            "max_dipole_error_au": error, "dipole_error_limit_au": limit}
+    # Check the largest predicted changes first so failures can stop the probes early.
+    checked_modes = eligible[np.argsort(-change_norms[eligible], kind="stable")].tolist()
+    diagnostics = {
+        "status": "passed",
+        "ground_mode_index": checked_modes[0],
+        "checked_ground_mode_indices": checked_modes,
+        "electronic_gap_hartree": gap,
+    }
+    for mode in checked_modes:
+        step = amplitude[mode] * modes[mode]
+        change = dipole_changes[mode]
+        observed = np.stack([
+            session.isolated_point(center.coordinates + sign * step, center).dipole - center.dipole
+            for sign in (-1, 1)
+        ])
+        error = float(np.max(np.linalg.norm(observed - np.stack((-change, change)), axis=1)))
+        scale = float(np.max(np.linalg.norm(observed, axis=1)))
+        limit = _DIPOLE_ABSOLUTE_TOLERANCE_AU + _DIPOLE_RELATIVE_TOLERANCE * scale
+        if error > limit:
+            raise ElectronicConvergenceError(
+                f"linear HT fails the zero-point displacement check for mode {mode + 1} "
+                f"(dipole error {error:.3g} e·bohr, limit {limit:.3g} e·bohr, "
+                f"neighboring root gap {gap:.3g} Hartree). A coordinate-dependent dipole or "
+                "coupled electronic states are needed to qualify the spectrum and radiative rate."
+            )
+        if mode == checked_modes[0]:
+            diagnostics.update(max_dipole_error_au=error, dipole_error_limit_au=limit)
+    return diagnostics
 
 
 def _gradient(point: _GroundPoint | _TrackedPoint) -> _Real:

@@ -221,6 +221,7 @@ class VibronicPhosphorescenceResult:
     sublevel_rates_resolved: NDArray[np.bool_]
     sublevel_spectra: tuple[HarmonicSpectrum, ...]
     basis_attempts: tuple[list[dict], ...]
+    target_coverage: float | None = None
 
     @property
     def physical_properties(self) -> dict:
@@ -234,6 +235,7 @@ class VibronicPhosphorescenceResult:
             summary = summarize_spectral_properties(
                 {"emission": spectrum}, spectral_status={"emission": "complete"},
                 temperature_kelvin=self.temperature_kelvin, assignment_scheme="harmonic_quanta",
+                target_coverage=self.target_coverage,
             )["spectra"]["emission"]
             channel_rate = float(population) * summary["vacuum_radiative_rate_s_inverse"]
             total_rate += channel_rate
@@ -318,5 +320,5 @@ def run_prepared_phosphorescence(
         checks.append(attempts)
     return VibronicPhosphorescenceResult(
         float(temperature_kelvin), population, origin, electronic.sublevel_rates_resolved.copy(),
-        tuple(spectra), tuple(checks),
+        tuple(spectra), tuple(checks), float(coverage),
     )

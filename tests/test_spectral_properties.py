@@ -131,7 +131,10 @@ class SpectralPropertiesTests(unittest.TestCase):
         self.assertEqual(e["origin_00_line"]["photon_energy"]["hartree"], 0.11)
         self.assertIsNone(report["paired"]["absorption_minus_emission_strongest_stick_energy"])
         missing = summarize_spectral_properties({"absorption": empty}, spectral_status={"emission": "incomplete"})
-        self.assertEqual(missing["spectra"]["emission"], {"coverage_status": "incomplete", "line_count": None})
+        self.assertEqual(missing["spectra"]["emission"], {
+            "coverage_status": "incomplete", "line_count": None,
+            "positive_photon_moments": {"M3": {"status": "unassessed"}, "M4": {"status": "unassessed"}},
+        })
         self.assertIsNone(missing["paired"])
 
     def test_anharmonic_dvr_labels_and_harmonic_spectators(self):

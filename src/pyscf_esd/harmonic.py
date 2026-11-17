@@ -8,6 +8,8 @@ from typing import Literal
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
+from .harmonic_moments import HarmonicPhotonMoment, harmonic_photon_moments
+
 _KB_HARTREE_PER_K = 3.166811563e-6
 
 
@@ -20,6 +22,8 @@ class HarmonicSpectrum:
     Amplitudes are complex when the dipole or its derivatives are complex.
     The Condon contribution, when decomposed, is the amplitude from the
     constant dipole in the initial surface's coordinate expansion.
+    ``positive_photon_moments`` maps photon-energy powers to retained moments
+    and omitted-moment bounds, independently of the dipole closure.
     """
 
     photon_energy_hartree: NDArray[np.float64]
@@ -31,6 +35,7 @@ class HarmonicSpectrum:
     final_dipole_strength_coverage: float | None
     transition_dipole_au: NDArray[np.float64] | NDArray[np.complex128] | None = None
     condon_transition_dipole_au: NDArray[np.float64] | NDArray[np.complex128] | None = None
+    positive_photon_moments: dict[int, HarmonicPhotonMoment] | None = None
 
     @property
     def thermal_strength_au2(self) -> NDArray[np.float64]:
@@ -221,6 +226,8 @@ def harmonic_spectrum(
     states, including zero-strength pairs. Strengths exclude photon-energy
     factors, radiative prefactors, and broadening. Coverage diagnostics use
     all retained pairs, even those omitted by the photon-energy filter.
+    Separate positive-photon diagnostics bound omitted M1 for absorption
+    and omitted M3 and M4 for emission.
     """
     omega_i = _real_array(initial_frequencies_hartree, "initial frequencies")
     omega_f = _real_array(final_frequencies_hartree, "final frequencies")
@@ -273,6 +280,7 @@ def harmonic_spectrum(
     final_states = _fock_states(modes, final_cutoff)
     retained_initial = initial_states[:initial_count]
     initial_energies = retained_initial @ omega_i
+    mean_occupation = np.zeros_like(omega_i)
     if temperature_kelvin == 0.0:
         populations = np.ones(1)
         amplitudes, total_strength, overlaps = _ground_amplitudes(
@@ -289,7 +297,10 @@ def harmonic_spectrum(
             with np.errstate(over="ignore", under="ignore"):
                 # Use the untruncated oscillator partition so omitted hot
                 # states reduce the reported population coverage.
-                log_inverse_partition = np.log(-np.expm1(-omega_i / thermal_energy)).sum()
+                beta_omega = omega_i / thermal_energy
+                inverse_partition = -np.expm1(-beta_omega)
+                mean_occupation = np.exp(-beta_omega) / inverse_partition
+                log_inverse_partition = np.log(inverse_partition).sum()
                 populations = np.exp(log_inverse_partition - initial_energies / thermal_energy)
 
     if derivatives is not None and temperature_kelvin > 0:
@@ -317,6 +328,12 @@ def harmonic_spectrum(
     photon_energies = gap_00_hartree + (final_states @ omega_f)[None, :] - initial_energies[:, None]
     if process == "emission":
         photon_energies *= -1
+    with np.errstate(over="ignore", under="ignore", invalid="ignore", divide="ignore"):
+        photon_moments = harmonic_photon_moments(
+            omega_i, omega_f, transform, shift, gap_00_hartree, dipole, derivatives, process,
+            retained_initial, initial_energies, populations, final_cutoff, strengths, total_strength,
+            photon_energies, mean_occupation,
+        )
     i, f = np.nonzero((photon_energies > 0) & (populations[:, None] > 0))
     order = np.argsort(photon_energies[i, f], kind="stable")
     i, f = i[order], f[order]
@@ -330,4 +347,5 @@ def harmonic_spectrum(
         final_dipole_strength_coverage=coverage,
         transition_dipole_au=amplitudes[i, f],
         condon_transition_dipole_au=overlaps[i, f, None] * dipole if derivatives is not None else None,
+        positive_photon_moments=photon_moments,
     )

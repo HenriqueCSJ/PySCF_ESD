@@ -106,6 +106,37 @@ class ComplexHarmonicTests(unittest.TestCase):
                 truncated = harmonic_spectrum([omega], [omega], final_max_quanta=0, **options)
                 self.assertAlmostEqual(truncated.final_dipole_strength_coverage, truncated.thermal_strength_au2.sum() / total)
 
+    def test_absorption_m1_bound_with_duschinsky_mixing_and_photon_clipping(self):
+        omega_i, omega_f = [0.004, 0.007], [0.006, 0.009]
+        angle = 0.4
+        options = dict(
+            gap_00_hartree=0.003, temperature_kelvin=700, shift_au=[5.0, -8.0],
+            rotation=[[np.cos(angle), -np.sin(angle)], [np.sin(angle), np.cos(angle)]],
+            transition_dipole_au=[0.4 + 0.2j, -0.3 - 0.1j, 0.2j],
+            dipole_derivatives_au=[
+                [0.03 - 0.07j, 0.12 + 0.09j, 0.03j],
+                [-0.02 + 0.01j, 0.01, 0.04 - 0.02j],
+            ],
+        )
+        truncated = harmonic_spectrum(omega_i, omega_f, initial_max_quanta=2, final_max_quanta=2, **options)
+        # Reversing the sign of the photon energy keeps the same vibrational
+        # populations and amplitudes while exposing the clipped sticks.
+        negative = harmonic_spectrum(
+            omega_i, omega_f, initial_max_quanta=2, final_max_quanta=2, process="emission", **options,
+        )
+        self.assertGreater(negative.thermal_strength_au2 @ negative.photon_energy_hartree, 1e-4)
+        wider = harmonic_spectrum(omega_i, omega_f, initial_max_quanta=8, final_max_quanta=14, **options)
+        weighted = wider.thermal_strength_au2 * wider.photon_energy_hartree
+        omitted_initial = wider.initial_quanta.sum(axis=1) > 2
+        omitted_final = (~omitted_initial) & (wider.final_quanta.sum(axis=1) > 2)
+        moment = truncated.positive_photon_moments[1]
+        self.assertAlmostEqual(moment.retained, weighted[~(omitted_initial | omitted_final)].sum())
+        self.assertGreaterEqual(moment.omitted_initial_upper_bound, weighted[omitted_initial].sum())
+        self.assertGreaterEqual(moment.omitted_final_upper_bound, weighted[omitted_final].sum())
+        # All clipped transitions from the retained initial states fit in the
+        # small final basis, so the analytic final-tail bound is tight.
+        np.testing.assert_allclose(moment.omitted_final_upper_bound, weighted[omitted_final].sum(), rtol=3e-5)
+
     def test_rejects_nonfinite_complex_components_and_complex_coordinates(self):
         options = dict(gap_00_hartree=0.1, initial_max_quanta=0, final_max_quanta=0)
         with self.assertRaisesRegex(ValueError, "transition_dipole_au must be finite"):

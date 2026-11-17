@@ -74,7 +74,7 @@ Peak positions, centroids, strongest sticks and the 0–0 energy measure differe
 - **State ambiguous.** Inspect the selected root, root-energy gaps and overlaps. The workflow treats an isolated adiabatic surface. Changes of electronic rank during optimization or local derivative sampling can invalidate this model.
 - **Minimum, curvature or HT check fails.** Verify the input, target and electronic recipe. Check for a nearby competing minimum, a shallow mode or near-degenerate states before interpreting local harmonic spectra. Numerical derivative fits carry their own held-out checks.
 - **Anharmonic model unsupported.** Multiple wells, strong coupling or a finite-temperature population tail beyond the automatic model can block `auto`. Select `ah` explicitly to study the harmonic approximation, or provide a validated larger-amplitude model through the [Python routes](api.md).
-- **Population or closure too low.** Compare the two coverages and increase the applicable vibrational budget if the expected memory and cost are manageable. Converge line positions or profile metrics of interest independently.
+- **Population, closure or a positive-photon moment fails its coverage check.** Review the initial and final basis cutoffs and the omitted-moment bounds in `diagnostics.json`. Increase the applicable vibrational budget if the expected memory and cost are manageable. Converge line positions or profile metrics of interest independently.
 
 ## NVIDIA GPU workflow
 

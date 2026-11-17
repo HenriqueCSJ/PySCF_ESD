@@ -77,6 +77,42 @@ class ElectronicOptimizationTests(unittest.TestCase):
         )
         self.assertFalse(calls)
 
+    def test_zero_point_dipole_check_covers_all_material_modes_spanning_the_gap(self):
+        coordinates = _diatomic(2.)
+        modes = np.eye(coordinates.size)[:4].reshape(4, *coordinates.shape)
+        frequencies = np.array([.005, .020, .025, .030])
+        amplitudes = 1. / np.sqrt(2. * frequencies)
+        derivatives = np.zeros((len(modes), 3))
+        derivatives[:, 0] = np.array([.24, .22, .20, 1e-6]) / amplitudes
+        center = SimpleNamespace(
+            coordinates=coordinates, root=0, dipole=np.array([0., .01, 0.]),
+            point=SimpleNamespace(excitation_energies_hartree=np.array([.17, .18])),
+        )
+        saturation = np.ones(len(modes))
+        calls = []
+
+        def displaced(geometry, anchor):
+            self.assertIs(anchor, center)
+            normal = np.einsum("max,ax->m", modes, geometry - coordinates)
+            calls.append(normal / amplitudes)
+            return SimpleNamespace(dipole=center.dipole + (normal * saturation) @ derivatives)
+
+        session = SimpleNamespace(isolated_point=displaced)
+        expected_calls = np.array([[0., -1., 0., 0.], [0., 1., 0., 0.],
+                                   [0., 0., -1., 0.], [0., 0., 1., 0.]])
+        saturation[2] = .6
+        with self.assertRaisesRegex(ElectronicConvergenceError, "zero-point displacement check for mode 3"):
+            _check_ht_zero_point(session, center, modes, frequencies, derivatives)
+        np.testing.assert_allclose(calls, expected_calls)
+
+        calls.clear()
+        saturation[2] = 1.
+        diagnostics = _check_ht_zero_point(session, center, modes, frequencies, derivatives)
+        self.assertEqual(diagnostics["status"], "passed")
+        self.assertEqual(diagnostics["ground_mode_index"], 1)
+        self.assertEqual(diagnostics["checked_ground_mode_indices"], [1, 2])
+        np.testing.assert_allclose(calls, expected_calls)
+
     def test_ground_hessian_seed_reduces_steps_on_same_surface(self):
         stiffness = 6.
 

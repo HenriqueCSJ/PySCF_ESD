@@ -1,17 +1,91 @@
 """Check full-space borrowing and its analytic derivative independently."""
 
 import unittest
+from types import SimpleNamespace
+from unittest.mock import patch
 
 import numpy as np
 
 from pyscf_esd.tda_soc_response import (
-    _derivative_adjoint, _dipole_derivatives, _full_space_moments, _moment_derivative, _sources,
+    _derivative_adjoint, _dipole_derivatives, _full_space_moments, _moment_derivative,
+    _qualify_soc_response, _sources, tda_soc_response,
 )
 from pyscf_esd.tda_state_interaction import assemble_tda_state_interaction
 from pyscf_esd import thermal_harmonic_spectrum
 
 
 class TDASOCResponseTests(unittest.TestCase):
+    def require_davidson(self):
+        try:
+            from pyscf import lib
+        except ImportError:
+            self.skipTest("matrix-free spectral qualification requires PySCF")
+
+    @staticmethod
+    def response_inputs(shifted_singlet, triplet):
+        n = len(triplet)
+        energy = .10
+        q = np.eye(1, n)
+        dipole = np.zeros((3, n + 1, n + 1))
+        dipole[0, 0, 1] = dipole[0, 1, 0] = 1.
+        somf = np.zeros_like(dipole)
+        somf[0, 1, n] = 1.
+        somf[0, n, 1] = -1.
+        singlet = shifted_singlet + energy * np.eye(n)
+        return (None, None, energy, q, dipole, somf,
+                lambda vectors: vectors @ singlet, singlet.diagonal(),
+                lambda vectors: vectors @ triplet, triplet.diagonal())
+
+    def test_dark_singlet_singularity_is_rejected_even_with_zero_optical_residual(self):
+        shifted_matrix = np.diag(np.linspace(.20, .82, 32))
+        # The dark vector also lives outside the coordinate with the smallest
+        # supplied diagonal, so a diagonal-only probe cannot find it.
+        shifted_matrix[-2:, -2:] = .5
+        for shifted in (np.diag([.20, 0.]), shifted_matrix):
+            with self.subTest(dimension=len(shifted)):
+                if shifted is shifted_matrix:
+                    self.require_davidson()
+                inputs = self.response_inputs(shifted, np.diag(np.linspace(.10, .40, len(shifted))))
+                _, _, residuals, _, _ = _full_space_moments(*inputs[2:], 1e-8, 128)
+                self.assertEqual(residuals, (0., 0.))
+                with patch("pyscf_esd.tda_soc_response._response_inputs", return_value=inputs):
+                    with self.assertRaisesRegex(ValueError, "lowest shifted singlet TDA eigenvalue"):
+                        tda_soc_response(None)
+
+    def test_triplet_eigenpair_is_verified_in_both_paths(self):
+        inputs = self.response_inputs(np.diag([.20, .30]), np.diag([.12, .30]))
+        target = SimpleNamespace(mol=SimpleNamespace(natm=1))
+        with patch("pyscf_esd.tda_soc_response._response_inputs", return_value=inputs):
+            for directions in (None, np.zeros((1, 1, 3))):
+                with self.subTest(derivatives=directions is not None):
+                    with self.assertRaisesRegex(ValueError, "triplet eigenpair residual"):
+                        tda_soc_response(target, directions=directions)
+
+    def test_triplet_ground_resolvent_and_analytic_root_gap_are_independent(self):
+        shifted = np.diag([.20, .30])
+        unstable = self.response_inputs(shifted, np.diag([.10, -.01]))
+        target = SimpleNamespace(mol=SimpleNamespace(natm=1))
+        with patch("pyscf_esd.tda_soc_response._response_inputs", return_value=unstable):
+            with self.assertRaisesRegex(ValueError, "lowest triplet TDA eigenvalue"):
+                tda_soc_response(target)
+        for other_energy in (.08, .10):
+            with self.subTest(other_energy=other_energy):
+                unresolved = self.response_inputs(shifted, np.diag([.10, other_energy]))
+                with patch("pyscf_esd.tda_soc_response._response_inputs", return_value=unresolved):
+                    with self.assertRaisesRegex(ValueError, "lowest projected triplet TDA eigenvalue"):
+                        tda_soc_response(target, directions=np.zeros((1, 1, 3)))
+
+    def test_matrix_free_qualification_accepts_positive_separated_operators(self):
+        self.require_davidson()
+        shifted = np.diag(np.linspace(.20, .82, 32))
+        shifted[-2:, -2:] = [[.5, .35], [.35, .5]]
+        _, _, energy, q, _, _, sa, sd, ta, td = self.response_inputs(
+            shifted, np.diag(np.linspace(.10, .40, len(shifted))),
+        )
+        for derivatives in (False, True):
+            with self.subTest(derivatives=derivatives):
+                _qualify_soc_response(energy, q, sa, sd, ta, td, derivatives=derivatives)
+
     def test_dipole_nuclear_translation_has_the_electron_charge_sign(self):
         try:
             from pyscf import gto

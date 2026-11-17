@@ -215,12 +215,16 @@ def _print_properties(properties: dict | None) -> None:
     if "absorption" in directions and "population_weighted_oscillator_strength_sum" in directions["absorption"]:
         absorption = directions["absorption"]
         strength = absorption["population_weighted_oscillator_strength_sum"]
-        print(f"Absorption ({absorption['coverage_status']})  Retained oscillator strength {strength:.6g}")
+        status = absorption["positive_photon_moments"]["M1"]["status"]
+        print(f"Absorption (spectrum {absorption['coverage_status']}, strength {status})  "
+              f"Retained oscillator strength {strength:.6g}")
     if "emission" in directions and "vacuum_radiative_rate_s_inverse" in directions["emission"]:
         emission = directions["emission"]
         rate = emission["vacuum_radiative_rate_s_inverse"]
         lifetime = emission["vacuum_radiative_lifetime_s"]
-        print(f"Emission ({emission['coverage_status']})  Retained vacuum radiative rate {rate:.6g} s^-1")
+        status = emission["positive_photon_moments"]["M3"]["status"]
+        print(f"Emission (spectrum {emission['coverage_status']}, rate {status})  "
+              f"Retained vacuum radiative rate {rate:.6g} s^-1")
         if lifetime is not None:
             print(f"Radiative lifetime from retained lines  {lifetime:.6g} s")
     if "gaussian_peak_stokes_shift_cm^-1" in properties:

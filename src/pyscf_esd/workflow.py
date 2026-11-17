@@ -13,6 +13,7 @@ from numpy.typing import ArrayLike
 from .anharmonic import AnharmonicSpectrum
 from .cpu import ElectronicConvergenceError, ReferenceStabilityUnresolvedError, Settings, UnstableReferenceError
 from .harmonic import HarmonicSpectrum
+from .harmonic_moments import photon_moment_report
 from .pyscf_adapter import AdiabaticHessianParameters
 from .state_tracking import StateTrackingError
 from .vibronic_properties import condon_ht_properties, harmonic_deformation_check, harmonic_model_properties
@@ -20,6 +21,7 @@ from .vibronic_properties import condon_ht_properties, harmonic_deformation_chec
 
 DEFAULT_SETTINGS = Settings("def2-tzvpd", "pbe0")
 DEFAULT_MAX_QUANTA = 32
+_HARMONIC_MODELS = {"ah_fc", "ah_ht", "vg"}
 
 
 class WorkflowIncomplete(ValueError):
@@ -56,6 +58,7 @@ class VibronicResult:
             self.spectra, spectral_status=self.diagnostics.get("spectral_status"),
             temperature_kelvin=self.diagnostics.get("temperature_kelvin"),
             assignment_scheme=assignment,
+            target_coverage=self.diagnostics.get("target_coverage") if self.model_used in _HARMONIC_MODELS else None,
         )
         properties["model_used"] = self.model_used
         for key in ("reference_target_index", "atom_symbols", "electronic_method", "electronic_validation"):
@@ -79,7 +82,7 @@ class VibronicResult:
 
 def _adaptive_spectrum(
     solver, *, process: str, temperature: float, coverage: float,
-    max_quanta: int, max_overlaps: int,
+    max_quanta: int, max_overlaps: int, qualify_photon_moments: bool = True,
 ) -> tuple[HarmonicSpectrum, list[dict]]:
     initial = 0
     final = min(2, max_quanta)
@@ -106,26 +109,51 @@ def _adaptive_spectrum(
             ) from error
         population = spectrum.initial_population_coverage
         strength = spectrum.final_dipole_strength_coverage
+        moments = getattr(spectrum, "positive_photon_moments", None) if qualify_photon_moments else None
+        moment_report = photon_moment_report(moments, process, coverage)
         attempts.append({
             "initial_max_quanta": initial, "final_max_quanta": final,
             "initial_population_coverage": population, "final_dipole_strength_coverage": strength,
+            "positive_photon_moments": moment_report,
         })
         if not np.isfinite(population) or (strength is not None and not np.isfinite(strength)):
             raise WorkflowIncomplete(f"{process} has nonfinite coverage", {"basis_attempts": attempts}, last_valid)
         last_valid = {process: spectrum}
-        if population >= coverage and (strength is None or strength >= coverage):
+        if qualify_photon_moments and any(entry["status"] == "unassessed" for entry in moment_report.values()):
+            raise WorkflowIncomplete(
+                f"{process} could not bound the omitted positive-photon moments",
+                {"process": process, "basis_attempts": attempts, "target_coverage": coverage},
+                last_valid,
+            )
+        incomplete_moments = [entry for entry in moment_report.values() if entry["status"] == "incomplete"]
+        strength_converged = strength is None or strength >= coverage
+        if population >= coverage and strength_converged and not incomplete_moments:
             return spectrum, attempts
         if population < coverage and initial < max_quanta:
             initial += 1
-        elif population >= coverage and final < max_quanta:
-            final += 1
-        else:
-            raise WorkflowIncomplete(
-                f"{process} reached the vibrational ceiling before obtaining {coverage:.1%} coverage",
-                {"process": process, "basis_attempts": attempts, "max_quanta": max_quanta,
-                 "target_coverage": coverage},
-                last_valid,
-            )
+            continue
+        if population >= coverage:
+            initial_deficit = final_deficit = 0.0
+            for entry in incomplete_moments:
+                initial_bound = entry["omitted_initial_upper_bound"]
+                final_bound = entry["omitted_final_upper_bound"]
+                total_bound = entry["retained"] + initial_bound + final_bound
+                initial_deficit = max(initial_deficit, initial_bound / total_bound)
+                final_deficit = max(final_deficit, final_bound / total_bound)
+            can_grow_initial = initial < max_quanta and initial_deficit > 0
+            can_grow_final = final < max_quanta and (final_deficit > 0 or not strength_converged)
+            if can_grow_initial and (not can_grow_final or initial_deficit > final_deficit):
+                initial += 1
+                continue
+            if can_grow_final:
+                final += 1
+                continue
+        raise WorkflowIncomplete(
+            f"{process} reached the vibrational ceiling before obtaining {coverage:.1%} coverage",
+            {"process": process, "basis_attempts": attempts, "max_quanta": max_quanta,
+             "target_coverage": coverage},
+            last_valid,
+        )
 
 
 def _prepare_reference(prepare, settings: Settings, fallback_xc: Sequence[str], attempts: list[dict], progress):
@@ -444,7 +472,7 @@ def _qualify_spectra(
         try:
             spectrum, attempts = _adaptive_spectrum(
                 solver, process=direction, temperature=temperature_kelvin, coverage=coverage,
-                max_quanta=max_quanta, max_overlaps=max_overlaps,
+                max_quanta=max_quanta, max_overlaps=max_overlaps, qualify_photon_moments=used in _HARMONIC_MODELS,
             )
         except WorkflowIncomplete as error:
             failures[direction] = {"reason": str(error), **error.diagnostics}

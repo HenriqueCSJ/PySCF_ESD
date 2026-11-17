@@ -16,8 +16,9 @@ from pathlib import Path
 
 report = json.loads(Path("run.esd/properties.json").read_text(encoding="utf-8"))
 emission = report["spectra"].get("emission", {})
-print("Emission coverage", emission.get("coverage_status", "unavailable"))
-if emission.get("coverage_status") == "complete":
+rate_status = emission.get("positive_photon_moments", {}).get("M3", {}).get("status", "unavailable")
+print("Radiative rate convergence", rate_status)
+if rate_status == "complete":
     print("k_f (s^-1)", emission["vacuum_radiative_rate_s_inverse"])
     lifetime = emission["vacuum_radiative_lifetime_s"]
     if lifetime is not None:
@@ -40,7 +41,7 @@ Paths below start at the root of `properties.json` or `result.physical_propertie
 - **Normal modes.** `harmonic_reference.ground_at_excited.modes` and `harmonic_reference.excited_at_ground.modes` give frequencies, displacements, Huang–Rhys factors, quadratic reorganization energies, and HT dipole scales where available. Find the Duschinsky matrix at `harmonic_reference.duschinsky_rows_excited_columns_ground` and the comparison of quadratic and direct deformation energies at `harmonic_cross_minimum_check`.
 - **Intensity decomposition.** In each direction, `condon_herzberg_teller` gives the weighted Condon and HT contributions and their signed interference. `final_mode_statistics` gives the mean final occupation and signal fraction involving each harmonic mode or spectator. Combination lines can contribute to multiple modes.
 
-Check `diagnostics.json` for the effective method, state tracking, derivatives and convergence. Each spectrum summary has `coverage_status`, `initial_population_coverage`, and `final_dipole_strength_coverage`. Totals use retained positive-energy sticks with their original populations. An incomplete result can contain a partial rate. Check the rate itself against the vibrational budget when comparing absolute values, since each emission line is weighted by the cube of its photon energy. An unsuccessful run with no usable spectrum may write only `diagnostics.json`.
+Check `diagnostics.json` for the effective method, state tracking, derivatives and convergence. Each spectrum summary reports coverage for the initial population and final dipole strength, plus separate `positive_photon_moments` checks for absorption strength (`M1`) or emission rate and power (`M3`, `M4`). Each moment sums population times squared dipole times the corresponding power of positive photon energy in Hartree. The harmonic checks report the retained sum, upper bounds for omitted initial and final states, and a lower bound on the fraction captured. The `status` can be `complete`, `incomplete`, or `unassessed`. A reported rate always comes from the retained sticks and their original populations. Interpret its reciprocal using the `M3` status. An unsuccessful run with no usable spectrum may write only `diagnostics.json`.
 
 ## Get every line from CSV
 

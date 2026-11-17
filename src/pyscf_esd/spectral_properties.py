@@ -12,6 +12,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from .harmonic import _real_array
+from .harmonic_moments import photon_moment_report
 
 
 # CODATA 2022. Wavenumber conversion is twice the Rydberg constant in cm^-1.
@@ -168,7 +169,7 @@ def _emitting_states(initial: _IntArray, scheme: str, population: _FloatArray, r
 
 def _spectrum_summary(
     spectrum: _StickSpectrum, process: _Process, status: str, max_dominant_lines: int,
-    assignment_scheme: _QuantaScheme | None,
+    assignment_scheme: _QuantaScheme | None, target_coverage: float | None,
 ) -> tuple[dict, float | None]:
     lines = spectral_line_properties(spectrum, process)
     energy = np.asarray(spectrum.photon_energy_hartree, dtype=float)
@@ -183,6 +184,9 @@ def _spectrum_summary(
         "coverage_status": status,
         "initial_population_coverage": _finite(spectrum.initial_population_coverage),
         "final_dipole_strength_coverage": None if coverage is None else _finite(coverage),
+        "positive_photon_moments": photon_moment_report(
+            getattr(spectrum, "positive_photon_moments", None), process, target_coverage,
+        ),
         "line_count": len(energy),
         "nonzero_weight_line_count": len(positive),
         "population_weighted_dipole_strength_sum_au2": _finite(np.dot(population, strength)),
@@ -285,6 +289,7 @@ def summarize_spectral_properties(
     temperature_kelvin: float | None = None,
     max_dominant_lines: int = 5,
     assignment_scheme: _QuantaScheme | None = None,
+    target_coverage: float | None = None,
 ) -> dict:
     """Summarize retained, positive-photon-energy sticks in a JSON-ready report.
 
@@ -296,6 +301,8 @@ def summarize_spectral_properties(
     summarize the final harmonic occupations in one-based model mode order.
     VCI dominant labels and DVR levels can identify lines without implying exact
     harmonic mode occupations.
+    Supply ``target_coverage`` to qualify positive-photon moments with available
+    omission bounds against the workflow's threshold.
     """
     if (isinstance(max_dominant_lines, bool) or not isinstance(max_dominant_lines, Integral)
             or max_dominant_lines < 0):
@@ -304,6 +311,8 @@ def summarize_spectral_properties(
         raise ValueError("unknown assignment_scheme")
     if temperature_kelvin is not None and (not isfinite(temperature_kelvin) or temperature_kelvin < 0):
         raise ValueError("temperature_kelvin must be finite and nonnegative")
+    if target_coverage is not None and (not isfinite(target_coverage) or not 0 < target_coverage <= 1):
+        raise ValueError("target_coverage must be between zero and one")
     statuses = {} if spectral_status is None else dict(spectral_status)
     for direction in spectra.keys() | statuses.keys():
         if direction not in ("absorption", "emission"):
@@ -317,7 +326,9 @@ def summarize_spectral_properties(
             "All sums and moments use retained positive-photon-energy electric-dipole lines. "
             "Initial vibrational populations are used without renormalization. "
             "Basis coverage measures population and dipole-strength closure. "
-            "Energy-weighted sums and moments can require separate convergence checks."
+            "Separate positive-photon bounds qualify the oscillator-strength sum (M1), "
+            "radiative rate (M3), and radiant power (M4) where available. "
+            "Other line statistics describe the retained sticks."
         ),
         "radiative_lifetime_definition": (
             "The vacuum radiative lifetime is the reciprocal of the radiative rate. "
@@ -332,10 +343,14 @@ def summarize_spectral_properties(
         coverage_status = statuses.get(process, "unassessed")
         if process in spectra:
             report["spectra"][process], strongest[process] = _spectrum_summary(
-                spectra[process], process, coverage_status, int(max_dominant_lines), assignment_scheme,
+                spectra[process], process, coverage_status, int(max_dominant_lines), assignment_scheme, target_coverage,
             )
         elif process in statuses:
-            report["spectra"][process] = {"coverage_status": coverage_status, "line_count": None}
+            report["spectra"][process] = {
+                "coverage_status": coverage_status,
+                "line_count": None,
+                "positive_photon_moments": photon_moment_report(None, process, target_coverage),
+            }
 
     if "absorption" in spectra and "emission" in spectra:
         absorption, emission = (report["spectra"][process] for process in ("absorption", "emission"))

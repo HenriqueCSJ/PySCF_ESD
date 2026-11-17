@@ -29,6 +29,22 @@ python examples/validate_water_gpu.py water-validation/reference.json water-gpu-
 
 The matched analytic VG run on the RTX 4070 Laptop GPU passed 16 acceptance checks with zero displaced production geometries. It gave maximum CPU–GPU differences of 3.64×10⁻¹¹ Hartree/bohr in the S₁ gradient and 7.04×10⁻¹¹ Hartree/bohr² in the S₀ Hessian. The largest assigned-line differences were 1.13×10⁻⁵ cm⁻¹ in absorption and 1.04×10⁻⁵ cm⁻¹ in emission. The CPU S₁ response residual was 8.51×10⁻¹¹ at the requested 10⁻¹⁰ tolerance. The warmed three-repeat medians were 21.37 s on the two-thread CPU route and 36.80 s on GPU. This is one small-molecule, matched-model result. In a separate instrumented run, SCF/TDA setup and validation and orbital stability checks accounted for about 89% of the additional GPU time. [CPU driver](../examples/validate_water_cpu.py) · [GPU driver](../examples/validate_water_gpu.py)
 
+## CPU default from XYZ
+
+The CPU `auto` workflow completed LiH from the XYZ below with the default PBE0/def2-TZVPD, first singlet and 0 K. It optimized both minima, tracked the electronic state and dipole phase, and selected the direct diatomic DVR. The scan used 51 direct energy and dipole evaluations. Absorption and emission each produced six positive-energy sticks, with final dipole-strength coverage of 99.52% and 99.83%, respectively. The harmonic moment bounds do not cover this direct anharmonic model. Its numerical report labels M1, M3 and M4 `unassessed` and provides the sums over the retained sticks.
+
+```sh
+cat > lih.xyz <<'EOF'
+2
+LiH test input, angstrom
+Li 0.0 0.0 0.0
+H  0.0 0.0 1.60
+EOF
+OMP_NUM_THREADS=4 OPENBLAS_NUM_THREADS=1 pyscf-esd lih.xyz --output lih-default.esd
+```
+
+The [harmonic convergence tests](../tests/test_prepared_ah.py) separately exercise hot-band emission and absorption in cases where unweighted dipole closure passes before the corresponding photon moment converges.
+
 ## Analytic excited-state derivatives
 
 - **LiH/6-31G, conventional RHF–TDA/CIS.** The analytic total S₁ Hessian at the relaxed S₁ minimum agreed with a 0.002 bohr central stencil of independent analytic gradients to 3.10×10⁻⁸ Hartree/bohr² in the largest Cartesian component. The stencil is a validation control. The analytic S₁ Hessian and native RHF S₀ Hessian supply the two-surface AH spectrum. The replay takes the retained directory containing `lih_rhf_cis_631g_ah_reference.npz` and its adjoining JSON. [LiH replay](../examples/validate_lih_analytic_ah.py)
