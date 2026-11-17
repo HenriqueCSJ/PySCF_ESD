@@ -2,6 +2,8 @@
 
 [Project home](../README.md) · [Benchmark methods](validation.md) · [Methods paper](paper/pyscf-esd.pdf)
 
+The [expanded benchmark gallery on the project page](../README.md#spectra-gallery) also includes the water CPU/GPU comparison and the formaldehyde, gas-phase benzene, and CF₃NO torsion controls.
+
 The captions give the linewidth and energy reference for each plot. Pyridine and quinine retain the absolute absorption scale. Each plot uses the axis and comparison settings of its benchmark.
 
 <details open>
