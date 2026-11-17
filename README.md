@@ -7,7 +7,7 @@
 [![License GPL-3.0-only](https://img.shields.io/badge/License-GPL--3.0--only-596773)](LICENSE)
 [![Methods paper PDF](https://img.shields.io/badge/Methods%20paper-PDF-913F62)](docs/paper/pyscf-esd.pdf)
 
-**[Quick start](#quick-start) · [Default and options](#default-and-options) · [Spectra gallery](#spectra-gallery) · [Output](#output) · [Methods paper](#methods-paper)**
+**[Quick start](#quick-start) · [Default and options](#default-and-options) · [Method guide](docs/using-methods.md) · [Spectra gallery](#spectra-gallery) · [Output](#output) · [Methods paper](#methods-paper)**
 
 ## Quick start
 
@@ -43,6 +43,8 @@ This example explicitly selects vertical gradient (VG) for a small installation 
 </details>
 
 ## Default and options
+
+See the [method guide](docs/using-methods.md) for CLI and Python examples, including explicit finite differences, SF-TDA, analytic derivatives, and prepared anharmonic models.
 
 The default CPU workflow uses PBE0/def2-TZVPD and the first singlet LR-TDA root at the relaxed ground-state geometry. It targets both directions at 0 K, optimizes the two geometries with analytic gradients, follows the electronic root and transition-dipole phase, and checks restricted orbital stability. The automatic nuclear model builds an adiabatic harmonic reference and screens direct cuts for anharmonicity. A case outside the model or numerical coverage is reported as incomplete. For gas-phase RKS/TDA, the automatic route can use checked local fits to analytic gradients and signed dipoles for the excited-state curvature and dipole derivative.
 
