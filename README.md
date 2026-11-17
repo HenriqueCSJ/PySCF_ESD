@@ -84,18 +84,35 @@ AH uses the two endpoint curvatures and includes Duschinsky rotation and coheren
 
 ## Spectra gallery
 
-The plots use photon energy in eV. The linewidth comparisons hold the prior energy shifts fixed and use the measured spectral windows. Fluorescence sampled per wavelength is treated as a wavelength density and converted to an energy density. Pyridine and quinine retain the absolute absorption scale. The solution benchmarks used prepared PySCF endpoints. Experimental curves and the ORCA comparator were replotted from the cited sources. The fitted comparison widths leave the software defaults and computed transition strengths unchanged.
+These selected plots retain their original axes and comparison parameters. The captions give the method, linewidth, and alignment for each case. Pyridine and quinine retain the absolute absorption scale. Comparison widths and shifts are applied after calculation and leave the software defaults and transition strengths unchanged.
 
 <details open>
-<summary><strong>Benzene · n-hexane · harmonic and anharmonic models</strong></summary>
+<summary><strong>Benzene · n-hexane · geometry sensitivity and anharmonicity</strong></summary>
 
 <p>
   <img src="docs/benchmarks/benzene.svg" alt="Six-membered aromatic ring of benzene" width="155">
 </p>
 
-![Benzene absorption and fluorescence in n-hexane compared with ORCA and experiment](docs/benchmarks/benzene.png)
+![Benzene at 298 K with the original and published CASPT2 equilibrium displacements](docs/benchmarks/benzene-geometry-control.png)
 
-The PBE anharmonic model reproduces the three main fluorescence bands and reduces the profile RMSE by **38%** relative to the harmonic control at the same width. With the comparison Voigt widths adjusted, the PBE anharmonic RMSE is **0.063** in absorption and **0.081** in fluorescence, versus **0.085** and **0.071** for the published ORCA curves. The archived mixed diagnostic gives a fluorescence RMSE of **0.074** and a smaller area-distribution error than ORCA. It combines force fields and assumes limiting front-face collection. Each model uses the same shift for both directions: **−0.239 eV** for harmonic PBE, **−0.241 eV** for anharmonic PBE and **−0.329 eV** for the mixed diagnostic. [de Souza et al., Fig. 3](https://doi.org/10.1063/1.5010895)
+Replacing the symmetric breathing displacement in the B3LYP5/TDA model with a published geometry-derived value changes the fluorescence peak ratio from **1.013 to 0.754**, versus **0.688** measured. The two calculations share the same Hessians, dipole model, origin, Lorentzian width and display shift. [Published CASPT2 geometries](https://doi.org/10.1063/1.480854)
+
+![Benzene PBE harmonic and anharmonic absorption and fluorescence compared with published curves](docs/benchmarks/benzene.png)
+
+The PBE anharmonic model reproduces the three main fluorescence bands and reduces the profile RMSE by **38%** relative to the harmonic control at the same adjusted width. The PBE anharmonic RMSE is **0.063** in absorption and **0.081** in fluorescence, versus **0.085** and **0.071** for the published comparison. [de Souza et al., Fig. 3](https://doi.org/10.1063/1.5010895)
+
+</details>
+
+<details>
+<summary><strong>CF₃NO · periodic rotor and 11 harmonic spectators</strong></summary>
+
+![CF3NO absorption at 298 K against the measured trace and calculated fluorescence for PBE0 and spin-flip TDA](docs/benchmarks/cf3no-298k.png)
+
+The published local harmonic AHAS calculation concentrates absorption intensity near the 0–0 origin. Treating the CF₃ rotation explicitly recovers the low-frequency progression and broad absorption envelope after alignment to the jet origin. The PySCF curves at 298 K use Gaussian FWHM **80 cm⁻¹**. The fluorescence panel retains the computed absolute photon-rate densities. The archived PBE0 reference has restricted-to-unrestricted orbital instability, so its spectra are a diagnostic of the reduced nuclear model. [Hage et al.](https://doi.org/10.1021/acsomega.6c11480)
+
+![CF3NO gas-phase absorption oscillator strength and emission photon rate on the native axis at 0 K](docs/benchmarks/cf3no-0k.png)
+
+The 0 K panel shows the native energy axis and absolute spectral densities with Gaussian **σ = 50 cm⁻¹**. The common 0–0 origin separates the main absorption and fluorescence bands.
 
 </details>
 
@@ -119,9 +136,9 @@ The broadened absorption maximum is **3.606 eV** before alignment, compared with
   <img src="docs/benchmarks/cyanoanthracene.svg" alt="Chemical structure of anthracene-9-carbonitrile" width="240">
 </p>
 
-![Calculated and measured spectra of 9-cyanoanthracene with previous and adjusted Gaussian linewidths](docs/benchmarks/cyanoanthracene.png)
+![Calculated and measured spectra of 9-cyanoanthracene at three Gaussian linewidths on native and aligned axes](docs/benchmarks/cyanoanthracene-widths.png)
 
-Holding the common shift at **+0.025 eV** and widening the Gaussian FWHM from **0.050 eV** to **0.108 eV** for absorption and **0.112 eV** for fluorescence lowers the profile errors by about **23%** and **27%**, respectively. The red absorption band still carries too much relative intensity. Equal curvatures and prepared endpoints define the AS model. [Boens et al., supporting Fig. S1-D, CC BY-NC 4.0](https://doi.org/10.1021/ac062160k.s001)
+The wavelength-domain comparison shows Gaussian FWHM values of **80**, **147**, and **400 cm⁻¹**, both on the native axis and with a common **+203 cm⁻¹** shift. The red absorption band carries too much relative intensity at all three linewidths. [Boens et al., supporting Fig. S1-D, CC BY-NC 4.0](https://doi.org/10.1021/ac062160k.s001)
 
 </details>
 
@@ -138,13 +155,22 @@ The local harmonic origin is **4.217 eV** versus **4.311 eV** measured. The comp
 
 </details>
 
+<details>
+<summary><strong>Lithium hydride · one-mode analytic AH control</strong></summary>
+
+![LiH 0 K absorption and fluorescence from the archived analytic RHF-CIS AH test](docs/benchmarks/lih.png)
+
+This archived RHF–CIS/6-31G test exercises the analytic derivatives and AH assembly with independent curvatures. At 0 K the strongest absorption line lies one excited-state harmonic quantum above the common 0–0 origin. Fluorescence peaks at the origin.
+
+</details>
+
 ## Output
 
 Open `diagnostics.json` first. It records the effective method, convergence and state checks, vibrational coverage, and the reason for any incomplete result. When available, the CLI writes assigned absorption and emission sticks, Gaussian profiles, and `properties.json` with oscillator strengths, vacuum radiative rates, spectral moments and peak separation. Partial outputs are labeled accordingly. A vacuum radiative lifetime describes spontaneous emission on the modeled surfaces. Experimental fluorescence lifetimes and yields also depend on nonradiative processes.
 
 ## Methods paper
 
-Read the [companion mini-article (PDF)](docs/paper/pyscf-esd.pdf) or its [LaTeX source](docs/paper/main.tex). It describes the electronic and vibronic approximations and compares their predictions with experimental spectra. The [ORCA fluorescence paper](https://doi.org/10.1063/1.5010895) provides the methodological context.
+Read the [companion methods paper (PDF)](docs/paper/pyscf-esd.pdf) or the LaTeX sources for the [main article](docs/paper/main.tex), [electronic response](docs/paper/electronic.tex), and [nuclear methods](docs/paper/nuclear.tex). The paper gives the working equations for signed root tracking, projected TDA response, coherent vibronic intensities, and thermal rotor–spectator spectra. The eight selected figures document the benchmarks.
 
 Build the article from its source with `latexmk -cd -pdf docs/paper/main.tex`.
 

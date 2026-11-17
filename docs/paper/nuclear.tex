@@ -1,0 +1,295 @@
+\subsection{Harmonic nuclear Hamiltonians}
+
+On surface $s$, the harmonic Hamiltonian in mass-weighted normal coordinates
+$Q_s$ is $H_s=E_s^{\min}+\tfrac12\sum_k(-\partial_{Q_{sk}}^2+\omega_{sk}^2 Q_{sk}^2)$
+in atomic units. Here $E_s^{\min}$ is the electronic minimum, $Q_s$ is in
+$\sqrt{m_e}\,\mathrm{bohr}$, and $\omega_{sk}$ denotes a vibrational energy
+quantum in Hartree. In the adiabatic Hessian (AH) model, the two Hessians
+give separate frequencies and normal modes. After mass-weighted alignment
+and removal of rigid motions, the orthogonal polar factor of the mode
+overlap gives the Duschinsky matrix $J$ in $Q_f=JQ_i+K$. Projecting the
+initial minimum relative to the aligned final minimum onto the final
+modes gives $K$. The singular values of the mode overlap and the residual
+of the displacement projection diagnose the affine approximation. The
+signed vibronic origin is $\Delta_{00}=E_f^{\min}-E_i^{\min}+Z_f-Z_i$,
+where $Z_s=\tfrac12\sum_k\omega_{sk}$.\cite{santoro}
+
+The adiabatic-shift (AS) model keeps the displacement and energy difference
+between the electronic minima and uses the ground-state curvature on both
+surfaces. The vertical-gradient (VG) model also uses equal curvatures. It
+places the excited-state minimum at $-\Omega_g^{-2}g$ in ground-state normal
+coordinates, where $g$ is the projected excited-state gradient at the
+ground-state minimum and $\Omega_g=\operatorname{diag}(\boldsymbol\omega_g)$.
+Completing the square lowers the vertical gap by
+$\tfrac12 g^{\mathsf T}\Omega_g^{-2}g$. The zero-point correction cancels in
+both equal-curvature models.
+
+For harmonic initial and final occupations $\mathbf n$ and $\mathbf m$, let
+$F_{\mathbf n\mathbf m}=\langle\chi_{f\mathbf m}|\chi_{i\mathbf n}\rangle$.
+With the combined index $\mathbf a=(\mathbf n,\mathbf m)$, the Hermite
+generating functions of the two oscillator bases give
+\begin{equation}
+ G(z)=\sum_{\mathbf a}F_{\mathbf a}\frac{z^{\mathbf a}}{\sqrt{\mathbf a!}}
+   =F_{\mathbf 0}\exp\bigl(\ell^{\mathsf T}z+\tfrac12 z^{\mathsf T}Bz\bigr).
+ \label{eq:fc-generating}
+\end{equation}
+Writing $\Omega_s=\operatorname{diag}(\boldsymbol\omega_s)$, the product of
+the two normalized vacuum Gaussians has precision
+$P=\Omega_i+J^{\mathsf T}\Omega_f J$ and mean
+$c=-P^{-1}J^{\mathsf T}\Omega_f K$ in the initial coordinates.
+With $c_f=Jc+K$ and
+$U=\bigl[(2\Omega_i)^{1/2};\,(2\Omega_f)^{1/2}J\bigr]$ denoting a vertical
+stack, the Gaussian integral gives
+\begin{equation}
+ \begin{aligned}
+ F_{\mathbf 0}&=
+ \frac{2^{d/2}(\det\Omega_i\det\Omega_f)^{1/4}}{\sqrt{\det P}}
+ \exp\!\left[-\tfrac12(c^{\mathsf T}\Omega_i c+c_f^{\mathsf T}\Omega_f c_f)\right],\\
+ \ell&=\begin{pmatrix}(2\Omega_i)^{1/2}c\\(2\Omega_f)^{1/2}c_f\end{pmatrix},
+ \qquad B=UP^{-1}U^{\mathsf T}-I ,
+ \end{aligned}
+\end{equation}
+where $d$ is the number of modes on each surface. Differentiating
+Eq.~\eqref{eq:fc-generating} gives, for any $a_j>0$,
+\begin{equation}
+ \sqrt{a_j}\,F_{\mathbf a}=
+ \ell_j F_{\mathbf a-\mathbf e_j}
+ +\sum_k B_{jk}\sqrt{a_k-\delta_{jk}}\,
+ F_{\mathbf a-\mathbf e_j-\mathbf e_k} .
+ \label{eq:fc-recurrence}
+\end{equation}
+The sum includes only occupied components of $\mathbf a-\mathbf e_j$.
+Here $\mathbf e_j$ adds one quantum to component $j$. Thus a basis with a
+total-quanta cutoff can be filled in order of increasing excitation.
+
+\subsection{Dipoles, populations, and optical strengths}
+
+The constant and first-order terms of the real Cartesian length-gauge
+dipole give the Franck--Condon (FC) and Herzberg--Teller (HT) amplitudes,
+respectively. For a dipole $\boldsymbol\mu_i$ in $e\,\mathrm{bohr}$ at the
+initial origin, define $\mathbf d_k=\partial_{Q_{ik}}\boldsymbol\mu$ there.
+The coordinate operator connects the two neighboring initial occupations,
+so the complete linear amplitude is
+\begin{equation}
+ \begin{aligned}
+ \boldsymbol\mu_{\mathbf m\mathbf n}={}&
+ \boldsymbol\mu_i F_{\mathbf n\mathbf m}
+ +\sum_k \frac{\mathbf d_k}{\sqrt{2\omega_{ik}}}
+ \left(\sqrt{n_k+1}\, F_{\mathbf n+\mathbf e_k,\mathbf m}
+       +\sqrt{n_k}\, F_{\mathbf n-\mathbf e_k,\mathbf m}\right),\\
+ S_{\mathbf m\mathbf n}={}&\|\boldsymbol\mu_{\mathbf m\mathbf n}\|^2 .
+ \end{aligned}
+ \label{eq:strength}
+\end{equation}
+The FC and HT vectors interfere before the Cartesian components are
+squared and summed. Both terms must use the same electronic phase and
+Cartesian frame. A global sign leaves $S$ invariant, whereas inconsistent
+signs between the dipole and its derivatives change the interference.
+The derivative rows use the signs and order of the chosen normal modes.
+For a single ground-endpoint expansion reused in emission, take
+$Q_e=JQ_g+K$ in the absorption convention. With $D_g$ the matrix whose rows
+are the ground-endpoint derivatives, the inverse affine map gives
+$D_e=JD_g$ and $\boldsymbol\mu_e=\boldsymbol\mu_g-D_g^{\mathsf T}J^{\mathsf T}K$
+for that same linear function. Prepared spectra may use independent dipole
+expansions evaluated at the two initial endpoints.\cite{baiardi}
+
+Positive photon energies are $E_\gamma=\eta(\Delta_{00}+
+\mathbf m\cdot\boldsymbol\omega_f-\mathbf n\cdot\boldsymbol\omega_i)$,
+with $\eta=+1$ for absorption and $\eta=-1$ for fluorescence, for which
+the excited surface is initial. At temperature $T>0$, the initial
+occupation carries $p_{\mathbf n}=\exp(-\beta\,\mathbf n\cdot\boldsymbol\omega_i)
+\prod_k(1-e^{-\beta\omega_{ik}})$ with $\beta=(k_{\mathrm B}T)^{-1}$.
+This uses the full harmonic partition function. At 0~K only the initial
+vacuum is occupied. For population coverage the assigned-stick solver
+sums $p_{\mathbf n}$ over retained initial occupations. Final strength
+coverage compares the retained final sum $\sum_{\mathbf n\mathbf m}
+p_{\mathbf n}S_{\mathbf m\mathbf n}$ with the complete final-state closure
+for the same initial states, both before the positive-energy cut. The
+closure for each $\mathbf n$ is
+$\|\boldsymbol\mu_i\|^2+\sum_k\|\mathbf d_k\|^2(2n_k+1)/(2\omega_{ik})$,
+from the initial number-state expectation of $\|\boldsymbol\mu(Q_i)\|^2$.
+The automatic workflow increases the two cutoffs separately to a default
+target of 99.5\% for both coverages and reports when a basis ceiling
+prevents reaching the target.
+
+For $E_\gamma$ in Hartree and $S$ in squared atomic units, the dimensionless
+absorption oscillator strength and the vacuum spontaneous emission rate are
+\begin{equation}
+ f=\frac{2}{3}E_\gamma S,
+ \qquad A=\frac{4\alpha^3}{3t_{\mathrm{au}}}E_\gamma^3 S ,
+ \label{eq:optical-weight}
+\end{equation}
+where $\alpha$ is the fine-structure constant and $t_{\mathrm{au}}$ is the
+atomic unit of time in seconds. Thermal sticks carry $pf$ or $pA$, with
+the population conditional on the initial electronic surface. The
+population-weighted Einstein coefficients count photons per second per
+molecule in the emitting state. Multiplication by the photon energy in
+joules converts photon rate to radiant power. For absorption per unit
+wavenumber, the oscillator-strength density gives the cross section on
+multiplication by $\pi r_e$, where $r_e$ is the classical electron radius
+in cm.
+
+\subsection{Selected anharmonic coordinates}
+
+For a single vibrational mode the automatic calculation samples both
+potentials and the signed vector dipole on a common mass-weighted
+coordinate. It solves each Hamiltonian by a sine discrete variable
+representation (DVR) with Dirichlet walls. It checks the interpolation
+against independent electronic samples and tests the nuclear levels and
+line strengths on finer grids. The domain is extended if the retained
+levels reach the potential at the walls or retain significant probability
+near an edge. These tests distinguish the precision of the interpolated
+electronic surfaces from convergence of the nuclear solution.\cite{dvr}
+
+For multiple modes, the automatic calculation uses local cuts about both
+minima in dimensionless coordinates $x_k=\sqrt{\omega_k}Q_k$. Each fit
+retains the Hessian quadratic term $\sum_k\omega_k x_k^2/2$ and tests cubic
+and quartic corrections along individual axes and selected pairs and
+triples. Held-out axis, mixed, and collective displacements constrain the
+sampled model. Vibrational configuration interaction (VCI) diagonalizes
+the correction in a harmonic product basis. Smoothly damping the
+corrections at the edge of the sampled region restores confining harmonic
+tails. The calculation checks the retained energies and eigenvectors or
+degenerate subspaces against larger bases and altered damping radii. The
+transition amplitudes contract both VCI eigenvectors with the harmonic
+FC and HT matrix elements. Unprobed couplings remain outside the test,
+and a verified second minimum requires a different nuclear model. The
+automatic workflow qualifies corrected spectra at 0~K. Its truncated
+anharmonic models supply only an estimated thermal partition tail.
+
+In the prepared formaldehyde example, the active space includes the
+reflection-odd inversion displacement between the two $S_1$ wells, the
+reflection-even mean displacement of the wells from the $S_0$ minimum,
+and the independent planar relaxation direction toward the $S_1$ saddle.
+The RHF--CIS/6-31G(d) potentials are even in the inversion coordinate and
+the retained dipole component is odd. A tensor sine DVR solves the coupled
+three-coordinate motion with a constant mass-weighted Cartesian kinetic
+operator. The three remaining modes contribute only their differential
+harmonic zero-point energy. At 0~K the initial even level therefore
+couples to odd levels on the other surface, and the even-to-even 0--0
+transition is dark within this model. The profile uses a Lanczos spectral
+quadrature of the final Hamiltonian with starting vector
+$\mu\chi_{i0}$, checked against quadrature order and changes in the nuclear
+grid and box. The model retains the double well and planar relaxation
+in its active space.
+
+\subsection{Periodic rotor with harmonic spectators}
+
+For a supplied closed angular path, a Fourier DVR uses
+$H_s^{\mathrm{rot}}=-(2I_s)^{-1}\partial_\theta^2+V_s(\theta)$ with $\theta$
+in radians. The potentials share an electronic energy reference. The
+uniform grid spans one full cycle without duplicating the endpoint. For
+a path $R_s(\theta)$ on a nonlinear molecule, the local inertia in
+$m_e\,\mathrm{bohr}^2$ is $\|P_{\mathrm{int}}M^{1/2}\partial_\theta R_s\|^2$,
+where $M$ is the diagonal Cartesian mass matrix and $P_{\mathrm{int}}$
+projects off the six mass-weighted rigid motions. The prepared assembly
+uses a surface-specific constant $I_s$ with $I_s^{-1}$ equal to the
+uniform-angle mean local inverse inertia. The stationary mass-weighted
+Hessians restricted to the subspaces perpendicular to the rigid and
+torsional directions supply the harmonic spectators. If $\hat t$ is
+the normalized projected torsion tangent, this restriction has projector
+$P_{\mathrm{sp}}=P_{\mathrm{int}}-\hat t\hat t^{\mathsf T}$.
+Let $W_{j+1}$ be an orthonormal basis of that subspace at the next angle
+and $\mathcal R_j$ the atom-block rotation of the moving top. For the
+transported modes $U_j$ the local update is
+\begin{equation}
+ U_{j+1}=W_{j+1}\operatorname{polar}
+          \bigl(W_{j+1}^{\mathsf T}\mathcal R_j U_j\bigr),
+ \label{eq:transport}
+\end{equation}
+where $\operatorname{polar}(B)$ denotes the orthogonal polar factor of $B$.
+The singular values before reorthogonalization quantify local subspace
+loss. The bases transported into a common angular frame give the spectator
+Duschinsky map and displacement.
+The separable Hamiltonian omits angular changes of the spectator
+Hamiltonian, variable inertia, and rotor--spectator coupling.
+The population model uses unit nuclear-spin statistical weights.\cite{hybriddvr}
+
+For a prepared path with signed overlaps between physical electronic
+states, the cumulative signs of successive overlaps define a continuous
+gauge for each isolated real state on the sampled path. The product
+including the closing link against the original first-point gauge gives
+its closure sign $h_s$. This contract requires physical-state overlaps
+for both states. The particle--hole similarity in
+Eq.~\eqref{eq:electronic-tracking} tracks the transition amplitude and
+supplies its phase for the signed dipole.
+Single-valuedness of the product of electronic and nuclear factors then
+requires $\chi_s(\theta+2\pi)=h_s\chi_s(\theta)$. The Fourier kinetic basis
+has integer wave numbers for $h_s=+1$ and half-integer wave numbers for
+$h_s=-1$. The potential remains periodic, while the signed dipole has
+closure sign $h_i h_f$ in the transported gauge.\cite{longuethiggins}
+These signs make the product $\chi_f^*\boldsymbol\mu\chi_i$ periodic.
+For DVR eigenvector components $C_{sj,a}$ normalized with the quadrature
+weight already included, the active dipole vector is
+$\mathbf A_{ba}=\sum_j C_{fj,b}^*\boldsymbol\mu(\theta_j)C_{ij,a}$.
+Contributions at different angles are summed coherently, so their
+relative signs matter even though the overall gauge sign of a line
+does not affect its strength. The rotor-only dipole approximation gives
+the total amplitude $\mathbf A_{ba} F_{\mathbf n\mathbf m}$, where
+$F_{\mathbf n\mathbf m}$ is now the spectator overlap. A finer DVR grid
+on Fourier-interpolated inputs checks the nuclear discretization.
+Convergence of the underlying cuts requires independent electronic
+samples.
+
+\subsection{All-quanta thermal profiles}
+
+Let $\epsilon_{sa}$ be a rotor eigenenergy and $p^{\mathrm{rot}}_a$ its
+initial Boltzmann population, normalized over the full finite DVR spectrum.
+For a spectator-independent dipole, the signed thermal dipole measure is
+the convolution $\mathcal S_{\mathrm{rot}}*\mathcal S_{\mathrm{h}}$ of
+\begin{align}
+ \mathcal S_{\mathrm{rot}}(x)&=
+ \sum_{ab} p^{\mathrm{rot}}_a\|\mathbf A_{ba}\|^2
+  \delta\bigl(x-\eta(\epsilon_{fb}-\epsilon_{ia})\bigr),\\
+ \mathcal S_{\mathrm{h}}(x)&=
+ \sum_{\mathbf n\mathbf m} p_{\mathbf n}|F_{\mathbf n\mathbf m}|^2
+  \delta\bigl(x-\eta[\Delta Z_{\mathrm h}+\mathbf m\cdot\boldsymbol\omega_f
+                           -\mathbf n\cdot\boldsymbol\omega_i]\bigr),
+\end{align}
+where $\Delta Z_{\mathrm h}$ is the spectator zero-point difference. At
+0~K the degenerate initial rotor ground manifold, when present, is
+uniformly populated. The retained rotor levels determine active population
+and strength coverage.
+The harmonic measure has unit integral by completeness, includes all
+initial and final harmonic occupations, and permits unequal frequencies,
+displacement and Duschinsky mixing.
+
+The transform of the harmonic measure is a Gaussian contraction of two
+copies of Eq.~\eqref{eq:fc-generating}. Define $L(t)$ as diagonal with
+entries $\exp[(-\beta+i\eta t)\omega_{ik}/2]$ for initial components and
+$\exp[-i\eta t\omega_{fk}/2]$ for final components, where $t$ is conjugate
+to energy in the Fourier transform. Let $B_t=L B L$ and $\ell_t=L\ell$.
+Contracting the two copies with equal Fock indices gives
+\begin{equation}
+ \widehat{\mathcal S}_{\mathrm h}(t)=
+ F_{\mathbf 0}^2\prod_k(1-e^{-\beta\omega_{ik}})
+ \frac{\exp\!\bigl[-it\eta\Delta Z_{\mathrm h}+
+      \ell_t^{\mathsf T}(I-B_t)^{-1}\ell_t\bigr]}
+      {\sqrt{\det(I-B_t^2)}} .
+ \label{eq:thermal-characteristic}
+\end{equation}
+The square root is continued from $t=0$. In the 0~K limit the initial
+activities vanish. In the standalone harmonic profile, the coordinate
+insertion $(z_k+\partial_{z_k})/\sqrt{2\omega_{ik}}$ multiplies $G(z)$ by
+an affine vector polynomial, including the constant dipole. The same
+Gaussian contraction gives the squared mean of this polynomial plus a
+cross-covariance term, with covariance $(I-B_t^2)^{-1}$ for the variables
+after scaling by $L(t)$. This sums the FC and linear HT terms coherently
+and recovers thermal dipole closure at $t=0$. The spectator-independent
+rotor convolution uses the FC contraction in Eq.~\eqref{eq:thermal-characteristic}.
+\cite{huhberger,baiardi}
+
+The numerical profile multiplies the active and harmonic transforms and
+then applies the positive-energy cut and the $E_\gamma$ or $E_\gamma^3$
+weight. Cutting the two measures separately would discard contributions
+that combine to give positive photon energies. For a nontrivial harmonic
+measure, the calculation uses a Fourier mesh in wavenumber, a two-sided
+exponential-moment bound on the underlying dipole measure, and a narrow
+auxiliary Gaussian of standard deviation twice the mesh spacing. To weight
+the original energies, $(u+\sigma_{\rm aux}^2\partial_u)^p$ acts on the
+auxiliary-smoothed density, with $p=1$ or $3$. Here $u$ and $\sigma_{\rm aux}$
+are in the same wavenumber units, and the result is converted to Hartree
+weighting. The remaining Gaussian variance is the requested physical
+variance minus the auxiliary variance. The harmonic sum is exact within
+the separable model. The profile retains a mesh error, especially near
+zero photon energy, where the auxiliary smoothing affects the cutoff.

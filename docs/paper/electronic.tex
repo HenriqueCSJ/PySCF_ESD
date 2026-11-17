@@ -1,0 +1,231 @@
+\subsection{Electronic reference and state assignment}
+\label{sec:electronic-reference}
+
+The automatic gas-phase workflow uses an all-electron, closed-shell
+restricted Kohn--Sham (RKS) reference and real, spin-adapted singlet states
+in the Tamm--Dancoff approximation (TDA) to time-dependent density
+functional theory.\cite{pyscf,tda} The default is PBE0/def2-TZVPD with an
+unpruned atom-centered integration grid.\cite{pbe0,diffuse} At Cartesian
+geometry $R$ the energy of the selected excited surface is
+\begin{equation}
+ A(R) q = \omega q, \qquad q^{\mathsf T}q=1, \qquad
+ E_{\mathrm{ex}}(R)=E_0(R)+\omega(R).
+ \label{eq:electronic-tda}
+\end{equation}
+Here $E_0$ is the total restricted ground-state energy and $A$ is the real
+symmetric TDA operator in the occupied--virtual orbital space. PySCF
+stores the excitation amplitudes as $X=q/\sqrt{2}$, with zero
+de-excitation amplitudes. The transpose in Eq.~\eqref{eq:electronic-tda}
+denotes the Euclidean scalar product after flattening the
+occupied--virtual indices.
+
+At each geometry the CPU workflow requires native self-consistent field
+(SCF) convergence and a norm of the occupied--virtual orbital gradient
+of at most $10^{-7}\,E_h$ by default, evaluated with a fresh Fock matrix
+from the final density. It tries a projected occupied space from a nearby
+geometry when available, followed by fresh restricted SCF guesses with
+first- and second-order solvers. The requested TDA eigenpairs must be
+converged, positive and sorted, with $2X_k^{\mathsf T}X_l=\delta_{kl}$ in
+the flattened representation and $\lVert A q_k-\omega_k q_k\rVert_2\le
+10^{-8}\,E_h$ by default. If the Davidson solution fails validation, a
+small particle--hole space can be diagonalized explicitly using the same
+operator. Larger spaces use a restarted iterative solve. The excited-state
+gradient also checks the absolute norm of the orbital-gap-preconditioned
+coupled-perturbed Hartree--Fock (CPHF) Z-vector residual against the
+response tolerance ($10^{-10}$ by default). A residual correction uses
+the original response operator and tolerance.
+
+The user selects a root at the ground-state minimum. At the next
+geometry $R'$, the occupied and virtual blocks $O$ and $V$ of
+\begin{equation}
+ C(R)^{\mathsf T} S(R,R') C(R'), \qquad
+ S_{\mu\nu}(R,R')=\langle\phi_\mu(R)\mid\phi_\nu(R')\rangle
+\end{equation}
+transport the two indices of the amplitude. Here $C$ contains the
+molecular orbital coefficients and $\phi_\mu$ is an atomic orbital.
+The signed score of root $k$ at $R'$ is
+\begin{equation}
+ s_k =
+ \frac{\left\langle O^{\mathsf T}X_{\rm ref}V, X_k(R')\right\rangle_F}
+ {\lVert X_{\rm ref}\rVert_F\,\lVert X_k(R')\rVert_F},
+ \label{eq:electronic-tracking}
+\end{equation}
+where $\langle\cdot,\cdot\rangle_F$ is the Frobenius scalar product and
+$X_{\rm ref}$ carries the phase of the accepted preceding point. This
+overlap of particle--hole transition densities is normalized by the two
+original norms so that it retains any loss on transport. The workflow
+maximizes $|s_k|$ and multiplies the selected $X_k$ and its dipole by
+$\operatorname{sgn}(s_k)$. The minimum score magnitude is 0.65. With
+multiple roots, the automatic workflow also requires a margin of at
+least 0.10 over the runner-up and a gap of at least $10^{-4}\,E_h$ to
+the closest computed neighbor. It
+expands the root window on insufficient overlap or a match at its upper
+edge, within a bounded search. A trial that changes the energy rank of
+the tracked root is rejected in the isolated adiabatic model.
+
+\subsection{Stationary geometries and local derivative fits}
+\label{sec:electronic-geometry}
+
+The gas-phase adiabatic Hessian (AH) workflow optimizes both surfaces
+with analytic gradients. It projects translations and rotations out
+of the Cartesian Broyden--Fletcher--Goldfarb--Shanno (BFGS) step and
+initializes the excited-state inverse Hessian from the projected
+ground-state Hessian. Each search starts with a maximum per-atom step
+length of at most 0.22~bohr before alignment and backtracking. With $g$
+the projected gradient and $\Delta R$ the realized displacement after
+alignment, the step must pass electronic validation and satisfy
+$g^{\mathsf T}\Delta R<0$ and
+\[
+ E(R+\Delta R)\le E(R)+10^{-4}g^{\mathsf T}\Delta R+2\times10^{-11}\,E_h .
+\]
+Steps that fail are shortened by successive halving. If the
+quasi-Newton search fails, the optimizer can restart from the last
+accepted geometry in the steepest-descent direction. The maximum norm
+of the Cartesian gradient on any atom must be at most
+$10^{-5}\,E_h\,\mathrm{bohr}^{-1}$ at a stationary endpoint. The
+minimum check requires positive, resolved curvature in the vibrational
+subspace. For a clearly negative eigenvalue the workflow searches for
+downhill branches along both signs of the lowest-curvature mode.
+
+The restricted determinant at each stationary geometry is tested for
+orbital instabilities within the restricted space and toward an
+unrestricted solution.\cite{stability} These tests probe orbital
+curvature in addition to SCF stationarity. An internal instability can
+restart the workflow with orbital-stability checks at every geometry.
+An unstable orbital rotation then seeds a fresh restricted SCF solve
+that must lower the energy and satisfy the same residual criterion.
+A verified instability toward an unrestricted determinant stops the
+automatic calculation with that functional. Only explicitly supplied
+alternate functionals are eligible for a fresh attempt, with the
+target root assigned anew at the corresponding ground-state minimum.
+An inconclusive stability solve terminates preparation.
+
+The automatic RKS/TDA route uses the analytic PySCF ground-state
+Hessian at fixed quadrature and the native TD-RKS excited-state
+gradient without an explicit moving-grid correction. It estimates
+excited-state curvature by fitting $g(x)-g(0)\simeq H x$ in a rigid-motion
+free Cartesian subspace, with $H=H^{\mathsf T}$ and $x$ a displacement
+in that subspace. Independent displacements test both the predicted
+gradients and the quadratic energy expansion. First-order
+Herzberg--Teller (HT) slopes are fitted to signed dipole differences
+in ground-state normal coordinates and checked on independent points.
+Each fit can be attempted at successively smaller radii. For HT, when
+the vibrational quantum of the dominant dipole-active mode reaches
+the neighboring electronic gap and its predicted dipole change is
+resolvable, direct calculations at both signed zero-point displacements
+also test the linear expansion. The workflow requires these checks to
+pass before using the derivative model. The explicitly selected
+vertical-gradient (VG) model instead uses the ground-state Hessian and
+the excited-state gradient at the ground-state minimum to construct
+two wells of equal curvature with a constant transition dipole.
+
+\subsection{Analytic derivatives of prepared TDA states}
+\label{sec:electronic-analytic}
+
+The prepared-state GPU4PySCF route differentiates isolated real singlet
+TDA roots of all-electron, global-hybrid LDA or GGA references in
+equilibrium linear-response conductor-like polarizable continuum
+solvation (LR C-PCM).\cite{gpu,cpcm,liangtda,liangpcm} Its curvature
+implementation uses spherical atomic orbitals, Coulomb-metric density
+fitting for both Coulomb and exchange, and the same switching/Gaussian
+(SWIG) cavity for the SCF and TDA calculations. It forms derivatives
+in an orthonormal moving orbital frame. In that frame the action on
+an occupied--virtual matrix $U$ is
+\begin{equation}
+ A[U]=UF_{vv}-F_{oo}U
+       +2C_o^{\mathsf T}\mathcal{V}[C_v U^{\mathsf T}C_o^{\mathsf T}]
+                 ^{\mathsf T}C_v ,
+\end{equation}
+where $F_{oo}$ and $F_{vv}$ are the occupied and virtual Fock blocks
+and $C_o$ and $C_v$ are the corresponding orbital coefficients.
+The linear singlet response $\mathcal{V}$ acts on the unsymmetrized
+atomic-orbital transition density and includes Coulomb, exchange,
+semilocal exchange--correlation, and reaction-field terms.
+The derivative implementation checks this action on the target root
+against the native operator. With Cartesian derivative
+indices $\alpha,\beta$, define
+$P=I-qq^{\mathsf T}$, $L=P(\omega I-A)P$, and
+$A_\alpha=\partial_\alpha A$, including the response of the RKS
+reference. On the subspace orthogonal to $q$, differentiation of
+Eq.~\eqref{eq:electronic-tda} gives
+\begin{align}
+ \omega_\alpha &= q^{\mathsf T} A_\alpha q, &
+ L q_\alpha &= P A_\alpha q, &
+ q^{\mathsf T} q_\alpha &=0, \\
+ H^{\mathrm{ex}}_{\alpha\beta}
+ &= H^{0}_{\alpha\beta}
+ + q^{\mathsf T} A_{\alpha\beta}q
+ + 2(PA_\alpha q)^{\mathsf T} q_\beta .
+ \label{eq:electronic-hessian}
+\end{align}
+The native ground-state Hessian $H^0$ includes motion of the
+quadrature and auxiliary basis. The mixed contraction at fixed $q$
+contains first-order occupied orbital responses and an orbital
+adjoint that eliminates the unknown second-order occupied--virtual
+rotation. The integral terms include motion of the orbital and
+auxiliary bases in the three-center integrals and inverse Coulomb
+metric, with $\partial_\alpha M^{-1}=-M^{-1}M_\alpha M^{-1}$ for
+the auxiliary metric $M$. The solvent terms include derivatives of
+the ground-state reaction field and of the response to the
+transition density. The semilocal exchange--correlation terms
+differentiate both the grid nodes and weights and include functional
+derivatives through fourth order.
+
+The projected solves check the eigenpair residual and separation of
+the target from neighboring roots and verify each response residual.
+Curvature uses a matrix-free minimum-residual solve, with batched
+conjugate-gradient solves for the lowest root when available and
+individual minimum-residual solves for unresolved rows. The three
+contributions to Eq.~\eqref{eq:electronic-hessian} are checked separately
+for symmetry before averaging numerical asymmetry. The TDA response
+alone is solved once more at tighter tolerances if its contraction
+exceeds $10^{-8}\,E_h\,\mathrm{bohr}^{-2}$ in asymmetry. A failed
+check ends the prepared analytic calculation.
+
+For a Cartesian dipole component $d$, let $b_d$ be the vector of
+$\sqrt{2}\langle i|r_d|a\rangle$ in the native length-gauge sign
+convention. Solving an adjoint equation for each Cartesian component gives
+\begin{equation}
+ \mu_d=b_d^{\mathsf T}q, \qquad
+ L z_d=P b_d, \qquad
+ \partial_\alpha\mu_d
+ =(\partial_\alpha b_d)^{\mathsf T}q+z_d^{\mathsf T} A_\alpha q.
+ \label{eq:electronic-dipole}
+\end{equation}
+The first contraction includes analytic position-integral derivatives
+and occupied and virtual orbital motion. The second uses polarization
+of quadratic TDA gradient contractions at the same geometry, with a
+moving exchange--correlation quadrature correction. A selected sign
+multiplies both $\boldsymbol\mu$ and its derivative. A separate
+conventional RHF configuration-interaction singles (CIS) implementation
+supplies dense analytic Hessians and dipole derivatives for pure HF.
+The automatic pure-HF route can fall back to the local fits when these
+dense calculations exceed the memory limit. Analytic derivatives
+that fail validation terminate the calculation.
+
+\subsection{Spin-flip optical response}
+
+The optional spin-flip route starts from a converged high-spin
+unrestricted Kohn--Sham triplet. Its multi-collinear TDA calculation
+produces spin-flip-down roots with energies $\Omega_i$ relative to that
+auxiliary reference.\cite{gpu} The optical gap between two selected
+low-spin roots is $\Delta_{ji}=\Omega_j-\Omega_i$. For their real amplitudes
+$X_i$ and $X_j$, the occupied and virtual blocks of the mixed density
+have the atomic-orbital form
+\begin{equation}
+ D_{\alpha}^{\mathrm d}=-C_o^\alpha X_i X_j^{\mathsf T}(C_o^\alpha)^{\mathsf T},
+ \qquad
+ D_{\beta}^{\mathrm d}=C_v^\beta X_j^{\mathsf T}X_i(C_v^\beta)^{\mathsf T}.
+ \label{eq:sf-density}
+\end{equation}
+Orbital relaxation supplies the occupied--virtual parts. With
+$\mathcal L_{\mathrm{sc}}$ the spin-conserving TDDFT action on the
+excitation and de-excitation blocks, the implementation solves
+$(\mathcal L_{\mathrm{sc}}-\Delta_{ji} I)z=b_{ij}$ by GMRES and verifies
+its residual. The source $b_{ij}$ contains the response to the blocks in
+Eq.~\eqref{eq:sf-density}, third-order exchange--correlation derivatives,
+and commutators of the transverse potentials with the spin-flip transition
+densities. Contracting the relaxed mixed density with the Cartesian
+position integrals gives the length-gauge dipole. This is an optical
+transition between the selected roots. The population and photon-energy
+weights enter only in the subsequent vibronic assembly.
