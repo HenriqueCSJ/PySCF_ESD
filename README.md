@@ -108,7 +108,7 @@ The PBE anharmonic model reproduces the three main fluorescence bands and reduce
 
 ![CF3NO absorption at 298 K against the measured trace and calculated fluorescence for PBE0 and spin-flip TDA](docs/benchmarks/cf3no-298k.png)
 
-The published local harmonic AHAS calculation concentrates absorption intensity near the 0–0 origin. Treating the CF₃ rotation explicitly recovers the low-frequency progression and broad absorption envelope after alignment to the jet origin. The PySCF curves at 298 K use Gaussian FWHM **80 cm⁻¹**. The fluorescence panel retains the computed absolute photon-rate densities. The archived PBE0 reference has restricted-to-unrestricted orbital instability, so its spectra are a diagnostic of the reduced nuclear model. [Hage et al.](https://doi.org/10.1021/acsomega.6c11480)
+The periodic CF₃ rotor recovers the low-frequency progression and broad absorption envelope after alignment to the measured jet origin. The peak-to-origin interval is **498.50 cm⁻¹**, compared with **499.90 cm⁻¹** measured. The PySCF curves at 298 K use Gaussian FWHM **80 cm⁻¹**, and fluorescence retains the computed photon-rate density. The article reports the reference-stability test and the native energy offset alongside this nuclear benchmark. [Hage et al.](https://doi.org/10.1021/acsomega.6c11480)
 
 ![CF3NO gas-phase absorption oscillator strength and emission photon rate on the native axis at 0 K](docs/benchmarks/cf3no-0k.png)
 
