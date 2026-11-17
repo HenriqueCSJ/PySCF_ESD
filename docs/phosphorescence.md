@@ -1,6 +1,31 @@
 # Unrestricted DFT and phosphorescence
 
-Use a converged UKS reference for spin-free triplet derivatives and spin-conserving open-shell spectra. For phosphorescence, provide a common set of spin-free states, a spin-dependent Hamiltonian, and their electric-dipole matrices. These inputs support vertical electronic rates and adiabatic Hessian (AH) emission with vibrational structure.
+Use a converged UKS reference for spin-free triplet derivatives and spin-conserving open-shell spectra. For phosphorescence from a closed-shell reference, PySCF can build spin–orbit coupling (SOC) and electric-dipole matrices from restricted DFT/TDA. These inputs support vertical electronic rates and adiabatic Hessian (AH) emission with vibrational structure.
+
+## Automatic SOC and interstate dipoles
+
+Start with a converged nonrelativistic, all-electron molecular RKS calculation at the geometry of interest. For phosphorescence use the independently checked triplet minimum. The CPU driver solves the singlet and triplet TDA manifolds on the same reference, then builds the matrices from PySCF integrals. It supports gas-phase RKS, including density-fitted references, with real orbitals and integer occupations.
+
+```python
+from pyscf import esd
+
+matrices = esd.run_pyscf_tda_soc(rks_at_triplet_minimum, n_singlets=12, n_triplets=12)
+rates = matrices.phosphorescence(triplet_root=0, temperature_kelvin=77)
+print(rates.transition_dipole_au)
+print(rates.vacuum_radiative_lifetime_s)
+```
+
+Increase the number of singlets and triplets until the rates stabilize. `response_tolerance` defaults to a TDA residual norm of $10^{-7}$ Hartree. The Davidson linear-dependence cutoff scales with the requested residual to retain small correction directions. When both native PySCF TDA objects are already solved, use `esd.assemble_pyscf_tda_soc(singlet_tda, triplet_tda)` with optional `singlet_roots` and `triplet_roots`. The selection preserves zero-based native root identities and order. The state basis has the ground state, the selected singlets, and three Cartesian spin components for each selected triplet.
+
+The operator is the molecular Breit–Pauli spin–orbit mean field (SOMF). For the spin-summed reference density $D$ and PySCF momentum integrals $G_{\xi,ijkl}$, the spatial coefficient multiplying the electron spin $S_\xi=\sigma_\xi/2$ is
+
+$$
+h_\xi = \frac{i}{2c^2}\left[V^{\mathrm{nuc}}_\xi+J_\xi-\frac{3}{2}(K_\xi-K_\xi^\mathsf{T})\right],
+\qquad J_{\xi,ij}=\sum_{kl}G_{\xi,ijkl}D_{lk},\qquad
+K_{\xi,il}=\sum_{jk}G_{\xi,ijkl}D_{jk}.
+$$
+
+The AO-shell contraction evaluates $J_\xi$ and $K_\xi$ without storing a four-index AO tensor. The normalized spatial TDA root is $\sqrt{2}X$, with spin excitations $I/\sqrt{2}$ and $\sigma_\xi/\sqrt{2}$. The projected effective one-body matrix includes the ground-to-excited block and both the virtual-particle and occupied-hole contractions between excited states. The electric dipole uses the physical length-gauge sign and includes the common nuclear contribution on the diagonal. Interstate and permanent dipoles are unrelaxed TDA singles matrix elements. Spin–spin zero-field splitting and nuclear derivatives of these electronic matrices require separate calculations. [Breit–Pauli SOMF in TDDFT](https://doi.org/10.1063/5.0130868) · [TDA state-interaction dipoles](https://doi.org/10.1039/D5CP01656H)
 
 ## Analytic derivatives of a UKS triplet
 
@@ -80,6 +105,8 @@ In this example the derivative coordinates are the mass-weighted triplet normal 
 
 The AH solver uses one nuclear surface for all triplet components and treats the spin splittings as constant. Duschinsky rotation and displacement enter the harmonic overlaps for emission. For each vibronic transition the complex Franck–Condon and Herzberg–Teller amplitudes are added before taking the squared norm. If $C$ is the constant-dipole amplitude and $L$ the linear-dipole amplitude, the interference term is $2\operatorname{Re}(C^\dagger L)$. The rate weights every line by its positive photon energy cubed and the thermal population of its initial vibrational state. The thermal sublevel weights enter once when summing the component spectra.
 
+For a Condon profile with many modes, use `thermal_harmonic_spectrum` on each sublevel to include all harmonic quanta without enumerating sticks. Give it `rotation=ah_parameters.rotation.T`, `shift_au=-(ah_parameters.rotation.T @ ah_parameters.shift_au)`, and `gap_00_hartree=-(adiabatic_origin_eh + splitting_eh)` for emission. A real vector with norm $|\tilde{\boldsymbol\mu}_{0i}|$ gives the same isotropic Condon strength as the original complex vector. Multiply each sublevel's rate or profile by its population before summing. See [numerical results](numerical-results.md#thermal-profiles-and-prepared-rotors) for the rate prefactor and reduced intensity convention.
+
 `result.sublevel_spectra` contains the sticks, `result.sublevel_populations` gives the spin weights, and `result.basis_attempts` reports the adaptive harmonic coverage. The JSON-ready report gives per-sublevel 0–0 energies, vacuum rates, lifetimes, dominant lines, and Condon/Herzberg–Teller contributions when slopes are supplied. Multiply each sublevel's photon-rate sticks by its spin weight before summing a total spectrum. The aggregate radiative lifetime is $1/\sum_i p_i A_i$ under thermal equilibration of the emitting sublevels. [TDDFT phosphorescence and Herzberg–Teller theory](https://pubs.acs.org/doi/10.1021/acs.jctc.8b00841)
 
 ## Spin-conserving open-shell absorption and emission
@@ -98,7 +125,15 @@ print(lines.einstein_a_s_inverse)
 
 The selected indices are zero-based. Oscillator strengths describe excitation out of the UKS reference and the Einstein coefficients describe the reverse transition back to it at the same geometry. The signed length-gauge dipoles retain the native response phases. The adapter reads the solved roots and evaluates the dipoles without launching new SCF or TDA runs.
 
-## Electronic preparation still needed
+## Further electronic response
 
 - For an automatic relaxed open-shell spectrum, optimize and verify both states, track the response root and phase, and provide independent curvatures and transition-moment response. The existing prepared AH interface can use qualified inputs. The analytic UKS endpoint gives the derivatives of a determinant surface. A response-excited root needs derivatives of its own energy and transition moment.
-- For automatic multiplicity-changing emission, construct the spin-adapted electronic state space and its magnetic components, a documented relativistic SOC operator, and intra- and inter-manifold dipole matrices in a common gauge. Converge the contributing state space and, for HT, supply its analytic derivative response. The current prepared solver targets triplet-to-singlet emission. Experimental lifetimes and quantum yields also require a population model and the relevant nonradiative rates.
+- For Condon emission the restricted TDA driver supplies equilibrium SOC and dipole matrices. Automated spin-vibronic HT needs analytic derivatives of the full SOMF and dipole matrices, including orbital and TDA response. The present spin-adapted driver starts from a closed-shell reference. Experimental decay lifetimes and quantum yields also require a population model and the relevant nonradiative rates.
+
+## Naphthalene benchmark
+
+Gas-phase DF-B3LYP/def2-SVP with def2-universal-jkfit was used for the RKS ground-state and UKS triplet minima, with analytic fixed-quadrature gradients and Hessians. The harmonic model retains 48 real modes on each surface. The spin-free adiabatic gap including zero-point energy is 2.5545 eV (20,603 cm⁻¹), 0.0797 eV below the 77 K light-petroleum-glass origin. The SOC calculation adds relative fine-structure splittings to the spin-free origin. The spectrum uses the 77 K Condon model and Duschinsky rotation, with a Gaussian FWHM of 0.019 eV. For relative intensity, the harmonic dipole-strength profile is compared with the reduced 77 K hydrocarbon-glass trace. The integrated radiative rate uses cubed photon-energy weights and the vacuum Einstein-A prefactor. [Absolute origin measurement](https://doi.org/10.1039/JR9540003160) · [Reduced spectrum, Figure S2 and Table S2](https://pstorage-acs-6854636.s3.amazonaws.com/6569049/jp6b07709_si_001.pdf)
+
+The same RKS reference at the UKS triplet minimum supplied 12 singlet and 12 triplet TDA roots with residuals below $10^{-7}$ Hartree. The RKS TDA $T_1$ and UKS determinant have squared overlap 0.945 in their common $M_S=1$ representation. The vertical rate changes by 0.014% from 8 to 12 roots of each spin. Four roots of each spin miss most of the intensity, including the opposite-reflection singles that start at the fifth singlet root. Zeroing SOC makes the transition exactly dark. The first-order and diagonalized total electronic dipole strengths agree to 0.031% in the 12+12 window.
+
+The 77 K Condon rate is $2.603\times10^{-3}\ \mathrm{s}^{-1}$, equivalent to a radiative lifetime of 384 s. Published solution estimates are 75 s in ethanol at 77 K and 19.3 s inferred from the polar-medium data compiled by de Souza and coworkers. The Condon model captures several spacings but overemphasizes the band near 1,630 cm⁻¹ below origin. Only 0.016% of the computed electronic dipole strength is perpendicular to the molecular plane. A later polarization measurement in EPA glass found perpendicular emission. The comparisons span different media. Spin-vibronic HT and borrowing through states above the tested window remain unevaluated. [Ethanol lifetime](https://doi.org/10.1063/1.1674576) · [Compiled radiative rate](https://doi.org/10.1021/acs.jctc.8b00841.s001) · [Polarization reappraisal](https://www.sciencedirect.com/science/article/abs/pii/S0301010405001928)

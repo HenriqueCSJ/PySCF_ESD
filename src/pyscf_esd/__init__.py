@@ -11,6 +11,7 @@ from .phosphorescence import (
     PhosphorescenceResult, VibronicPhosphorescenceResult, run_prepared_phosphorescence,
     spin_orbit_dipole_derivatives, spin_orbit_phosphorescence,
 )
+from .pyscf_soc import PySCFTDASOC, assemble_pyscf_tda_soc, run_pyscf_tda_soc
 from .rotor_coordinates import (
     bond_rotation, map_transported_spectators, project_spectator_modes, project_torsion,
     transport_bond_spectators,
@@ -29,6 +30,7 @@ __all__ = [
     "MolecularTDAHessian", "PhasedPeriodicScan", "PhasedRotorDipole", "PhosphorescenceResult", "UKSTripletEndpoint",
     "TDADipoleResult", "ThermalSeparableSpectrum", "VibrationalMixingResult", "VibronicResult", "WorkflowIncomplete",
     "UnrestrictedTDAVerticalSpectrum", "VibronicPhosphorescenceResult",
+    "PySCFTDASOC", "assemble_pyscf_tda_soc",
     "analytic_molecular_tda_hessian", "analytic_tda_transition_dipole", "analytic_uks_triplet_endpoint",
     "anharmonic_spectrum",
     "bond_rotation", "electronic_relaxation_properties", "harmonic_model_properties", "harmonic_spectrum",
@@ -36,7 +38,7 @@ __all__ = [
     "map_transported_spectators", "project_spectator_modes", "project_torsion",
     "mix_vibrational_states", "phase_periodic_scan", "resample_periodic", "run_prepared_ah", "run_vibronic", "solve_dvr",
     "spectral_line_properties", "summarize_spectral_properties", "thermal_harmonic_spectrum", "thermal_separable_spectrum",
-    "run_prepared_phosphorescence", "spin_orbit_dipole_derivatives", "spin_orbit_phosphorescence",
+    "run_prepared_phosphorescence", "run_pyscf_tda_soc", "spin_orbit_dipole_derivatives", "spin_orbit_phosphorescence",
     "unrestricted_tda_vertical_spectrum",
     "transport_bond_spectators",
 ]

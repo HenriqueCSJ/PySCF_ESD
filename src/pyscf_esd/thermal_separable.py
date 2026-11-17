@@ -50,6 +50,7 @@ class ThermalSeparableSpectrum:
     tail_probability_bound: float
     auxiliary_sigma_cm_inverse: float
     negative_weight_grid_fraction: float
+    dipole_strength_density_per_cm_inverse: _FloatVector | None = None
 
 
 @dataclass(frozen=True)
@@ -474,21 +475,28 @@ def thermal_separable_spectrum(
 
 def _thermal_profile(
     energy, strength, harmonic, origin, population, closure, *, process, temperature_kelvin, fwhm_cm_inverse,
-    sigma, step, tail_tolerance, max_grid_points,
+    sigma, step, tail_tolerance, max_grid_points, include_dipole_strength_density=False,
 ):
     auxiliary_sigma = 2 * step
     signed_strength = float(strength.sum())
     exponent = 3 if process == "emission" else 1
     negative_fraction = 0.0
+    dipole_transform = None
     if not harmonic.energy.size or signed_strength == 0:
         positive = energy > 0
         energy = energy[positive]
-        weight = strength[positive] * (energy / HARTREE_TO_WAVENUMBER)**exponent
+        positive_strength = strength[positive]
+        weight = positive_strength * (energy / HARTREE_TO_WAVENUMBER)**exponent
         total = float(weight.sum())
         centroid = None if total == 0 else float(weight @ energy / total)
         limits = (origin, origin) if total == 0 else _finite_tail_limits(energy, weight, tail_tolerance)
+        if include_dipole_strength_density and np.any(positive_strength):
+            dipole_limits = _finite_tail_limits(energy, positive_strength, tail_tolerance)
+            limits = min(limits[0], dipole_limits[0]), max(limits[1], dipole_limits[1])
         axis = _fft_grid(limits, step, sigma, int(max_grid_points))
         transform = _binned_active_transform(energy, weight, axis[0], step, len(axis))
+        if include_dipole_strength_density:
+            dipole_transform = _binned_active_transform(energy, positive_strength, axis[0], step, len(axis))
         auxiliary_sigma = 0.0
     else:
         limits = _signed_tail_limits(energy, strength, harmonic, tail_tolerance, auxiliary_sigma)
@@ -498,6 +506,13 @@ def _thermal_profile(
         # A spectator shift can change the sign of a photon energy. Combine
         # signed contributions before applying the positive-energy cutoff.
         transform *= harmonic.transform(frequencies)
+        if include_dipole_strength_density:
+            # Use the same auxiliary energy resolution and the same positive
+            # photon cutoff as the photon-weighted profile.
+            smooth = transform * np.exp(-0.5 * (frequencies * auxiliary_sigma)**2)
+            dipole_bins = np.maximum(np.fft.irfft(smooth, n=len(axis)), 0)
+            dipole_bins[axis <= 0] = 0
+            dipole_transform = np.fft.rfft(dipole_bins)
         weight = _smoothed_weighted_bins(transform, frequencies, axis, auxiliary_sigma, exponent)
         weight[axis <= 0] = 0
         negative_fraction = -float(weight[weight < 0].sum()) / max(
@@ -511,9 +526,13 @@ def _thermal_profile(
     gaussian = np.exp(-0.5 * frequencies**2 * (sigma**2 - auxiliary_sigma**2))
     # Convert bin weights to a density per cm⁻¹, preserving integrated strength.
     density = np.fft.irfft(transform * gaussian, n=len(axis)) / step
+    dipole_density = None if dipole_transform is None else np.maximum(
+        np.fft.irfft(dipole_transform * gaussian, n=len(axis)) / step, 0,
+    )
     return ThermalSeparableSpectrum(
         axis, np.maximum(density, 0), fwhm_cm_inverse, step, temperature_kelvin, process,
         population, closure, signed_strength, total, centroid, origin, tail_tolerance, auxiliary_sigma, negative_fraction,
+        dipole_density,
     )
 
 
@@ -532,6 +551,7 @@ def thermal_harmonic_spectrum(
     step_cm_inverse: float | None = None,
     tail_tolerance: float = 1e-12,
     max_grid_points: int = 2**20,
+    include_dipole_strength_density: bool = False,
 ) -> ThermalSeparableSpectrum:
     """Evaluate an all-quanta FC/HT harmonic profile on a photon-energy grid.
 
@@ -545,7 +565,9 @@ def thermal_harmonic_spectrum(
     The characteristic transform and thermal closure include all harmonic
     states. The energy mesh controls the auxiliary Gaussian cutoff at zero
     photon energy. The returned profile includes the positive-energy dipole
-    weight E for absorption and E³ for emission, with E in Hartree.
+    weight E for absorption and E³ for emission, with E in Hartree. Request
+    the separate dipole-strength density for comparisons to experimental
+    spectra reduced by the photon-energy factor before broadening.
     """
     sign, thermal_energy, sigma, step = _thermal_settings(
         process, temperature_kelvin, fwhm_cm_inverse, step_cm_inverse, tail_tolerance, max_grid_points,
@@ -565,5 +587,5 @@ def thermal_harmonic_spectrum(
         np.array([origin - harmonic.zero_point]), np.array([strength]), harmonic, origin, 1.0,
         1.0 if strength > 0 else None, process=process, temperature_kelvin=temperature_kelvin,
         fwhm_cm_inverse=fwhm_cm_inverse, sigma=sigma, step=step, tail_tolerance=tail_tolerance,
-        max_grid_points=max_grid_points,
+        max_grid_points=max_grid_points, include_dipole_strength_density=include_dipole_strength_density,
     )

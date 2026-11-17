@@ -82,6 +82,8 @@ For prepared AH phosphorescence, `result.physical_properties` gives the vacuum r
 
 For `thermal_harmonic_spectrum` or `thermal_separable_spectrum`, use `positive_photon_weighted_strength`. It is the integral of the positive-photon-energy signal weighted by $E$ for absorption and $E^3$ for emission, with $E$ in Hartree. Multiply by $2/3$ for total oscillator strength or by $4\alpha^3/(3t_{\mathrm{au}})$ for the vacuum radiative rate. The same factors convert the returned profile density to physical units.
 
+If the experimental spectrum has already been reduced by its photon-energy factor, call `thermal_harmonic_spectrum(..., include_dipole_strength_density=True)` and plot `dipole_strength_density_per_cm_inverse`. This profile uses the same Gaussian width and omits the photon-energy factor before broadening. Use `positive_photon_weighted_strength` for the physical rate.
+
 ```python
 def thermal_rates(emission_profile):
     if emission_profile.process != "emission":

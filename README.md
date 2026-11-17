@@ -205,7 +205,7 @@ The [numerical output guide](docs/numerical-results.md) shows how to extract the
 
 ## Unrestricted DFT and phosphorescence
 
-The [unrestricted DFT and phosphorescence APIs](docs/phosphorescence.md) cover analytic derivatives of a high-spin UKS triplet, vertical absorption and emission from prepared UKS/TDA roots, and AH phosphorescence from prepared spin–orbit matrices. The phosphorescence workflow resolves triplet sublevels and supports complex Franck–Condon and Herzberg–Teller amplitudes, Duschinsky rotation, and temperature-dependent vacuum radiative rates.
+The [unrestricted DFT and phosphorescence APIs](docs/phosphorescence.md) cover analytic derivatives of a high-spin UKS triplet, vertical absorption and emission from prepared UKS/TDA roots, and spin–orbit phosphorescence. PySCF can build molecular Breit–Pauli SOC and interstate electric-dipole matrices directly from restricted DFT/TDA. The AH workflow resolves triplet sublevels and supports Duschinsky rotation, thermal radiative rates, and complex Herzberg–Teller amplitudes when analytic slopes are supplied.
 
 ## Methods paper
 

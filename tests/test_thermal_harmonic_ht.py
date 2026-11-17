@@ -47,6 +47,7 @@ class ThermalHarmonicHTTests(unittest.TestCase):
                     omega_i, omega_f, gap_00_hartree=gap, transition_dipole_au=dipole,
                     dipole_derivatives_au=derivatives, process=process, temperature_kelvin=temperature,
                     rotation=rotation, shift_au=shift, fwhm_cm_inverse=width, step_cm_inverse=1.0,
+                    include_dipole_strength_density=True,
                 )
                 self.assertEqual(profile.initial_population_coverage, 1.0)
                 self.assertEqual(profile.final_dipole_strength_coverage, 1.0)
@@ -57,12 +58,19 @@ class ThermalHarmonicHTTests(unittest.TestCase):
                 np.testing.assert_allclose(profile.positive_photon_weighted_strength, photon_weights.sum(), rtol=2e-9)
                 axis = profile.wavenumber_cm_inverse
                 reference = np.zeros_like(axis)
+                reduced_reference = np.zeros_like(axis)
                 sigma = width / np.sqrt(8 * np.log(2))
                 significant = photon_weights > 1e-12 * photon_weights.sum()
-                for line, weight in zip(sticks.photon_energy_hartree[significant], photon_weights[significant], strict=True):
-                    reference += weight * np.exp(-0.5 * ((axis - CM * line) / sigma)**2) / (sigma * np.sqrt(2 * np.pi))
+                for line, weight, reduced in zip(
+                    sticks.photon_energy_hartree[significant], photon_weights[significant], strength[significant], strict=True,
+                ):
+                    gaussian = np.exp(-0.5 * ((axis - CM * line) / sigma)**2) / (sigma * np.sqrt(2 * np.pi))
+                    reference += weight * gaussian
+                    reduced_reference += reduced * gaussian
                 l1_error = np.sum(np.abs(reference - profile.photon_weighted_density_per_cm_inverse))
                 self.assertLess(l1_error / photon_weights.sum(), 2e-9)
+                reduced_error = np.sum(np.abs(reduced_reference - profile.dipole_strength_density_per_cm_inverse))
+                self.assertLess(reduced_error / strength.sum(), 2e-9)
 
     def test_ht_only_equal_surfaces_include_thermal_sidebands_and_positive_cutoff(self):
         omega = 500 / CM
