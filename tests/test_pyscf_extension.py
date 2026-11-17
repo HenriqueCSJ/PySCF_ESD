@@ -25,7 +25,8 @@ class PySCFExtensionTests(unittest.TestCase):
         mol = gto.M(atom="He 0 0 0; H 0 0 0.8", unit="Angstrom", basis="def2-SVP",
                     charge=1, verbose=0)
         with patch("pyscf.esd.run_vibronic") as workflow:
-            result = esd.run(mol, xc="b3lyp", target_index=5, model="ah", temperature_kelvin=298)
+            result = esd.run(mol, xc="b3lyp", target_index=5, model="ah", temperature_kelvin=298,
+                             backend="gpu", solvent="cyclohexane")
         workflow.assert_called_once()
         symbols, coords, settings = workflow.call_args.args
         self.assertEqual(symbols, ("He", "H"))
@@ -33,7 +34,8 @@ class PySCFExtensionTests(unittest.TestCase):
         self.assertEqual((settings.basis, settings.charge, settings.xc, settings.nstates),
                          ("def2-SVP", 1, "b3lyp", 7))
         self.assertEqual(workflow.call_args.kwargs,
-                         {"target_index": 5, "model": "ah", "temperature_kelvin": 298})
+                         {"target_index": 5, "model": "ah", "temperature_kelvin": 298,
+                          "backend": "gpu", "solvent": "cyclohexane"})
         self.assertIs(result, workflow.return_value)
 
     def test_unsupported_molecules_fail_before_running_the_workflow(self):

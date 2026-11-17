@@ -2,6 +2,7 @@
 
 from dataclasses import replace
 from importlib.util import find_spec
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -9,6 +10,19 @@ import numpy as np
 
 
 class MolecularTDAResponseRefinementTests(unittest.TestCase):
+    def test_vacuum_has_zero_fixed_density_solvent_terms(self):
+        from pyscf_esd.molecular_tda_hessian import _MolecularTDAOperator
+
+        model = _MolecularTDAOperator.__new__(_MolecularTDAOperator)
+        model.mf = SimpleNamespace(mol=SimpleNamespace(natm=2, nao=5))
+        gradients, hessian = model.solvent_derivatives()
+        self.assertEqual(len(gradients), 3)
+        for gradient in gradients:
+            self.assertEqual(gradient.shape, (6, 5, 5))
+            np.testing.assert_array_equal(gradient, 0)
+        self.assertEqual(hessian.shape, (6, 6))
+        np.testing.assert_array_equal(hessian, 0)
+
     def test_refines_only_projected_response_when_relaxation_is_asymmetric(self):
         from pyscf_esd import molecular_tda_hessian
         from pyscf_esd.tda_hessian import assemble_tda_hessian, solve_tda_root_response

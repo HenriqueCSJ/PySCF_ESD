@@ -12,7 +12,7 @@ import numpy as np
 
 from pyscf_esd import WorkflowIncomplete, run_vibronic
 from pyscf_esd.cli import _write_profile, main
-from pyscf_esd.cpu import ReferenceStabilityUnresolvedError, UnstableReferenceError
+from pyscf_esd.cpu import ElectronicConvergenceError, ReferenceStabilityUnresolvedError, UnstableReferenceError
 from pyscf_esd.harmonic import harmonic_spectrum
 from pyscf_esd.pyscf_adapter import VerticalGradientParameters
 from pyscf_esd.state_tracking import StateTrackingError
@@ -65,6 +65,52 @@ class FirstRunTests(unittest.TestCase):
         np.testing.assert_array_equal(
             self.electronic.model.spectrum.call_args.kwargs["dipole_derivatives_au"], np.zeros((1, 3)),
         )
+
+    def test_gpu_ah_and_auto_use_the_analytic_electronic_backend(self):
+        prepare_gpu = Mock(return_value=self.electronic)
+        with patch.dict(sys.modules, {
+            "pyscf_esd.gpu_adiabatic": SimpleNamespace(prepare_gpu_electronic=prepare_gpu),
+        }):
+            ah = run_vibronic(("H", "H"), self.geometry, backend="gpu", model="ah", solvent="water")
+            auto = run_vibronic(("H", "H"), self.geometry, backend="gpu")
+        self.mock_electronic.prepare_electronic.assert_not_called()
+        self.assertEqual(set(ah.spectra), {"absorption", "emission"})
+        self.assertEqual(ah.diagnostics["electronic_backend"], "gpu")
+        self.assertEqual(ah.diagnostics["solvent"], "water")
+        self.assertEqual(prepare_gpu.call_args_list[0].kwargs, {
+            "target_index": 0, "direct_dipole": False, "solvent": "water",
+        })
+        self.assertEqual(prepare_gpu.call_args_list[1].kwargs, {
+            "target_index": 0, "direct_dipole": True, "solvent": None,
+        })
+        self.assertEqual(auto.diagnostics["electronic_backend"], "gpu")
+        self.mock_anharmonic.prepare_anharmonic.assert_called_once()
+
+    def test_gpu_analytic_failure_never_restarts_on_cpu(self):
+        prepare_gpu = Mock(side_effect=ElectronicConvergenceError("analytic response failed"))
+        with patch.dict(sys.modules, {
+            "pyscf_esd.gpu_adiabatic": SimpleNamespace(prepare_gpu_electronic=prepare_gpu),
+        }), self.assertRaisesRegex(WorkflowIncomplete, "analytic response failed"):
+            run_vibronic(("H", "H"), self.geometry, backend="gpu", model="ah")
+        self.mock_electronic.prepare_electronic.assert_not_called()
+
+    def test_gpu_vg_uses_the_relaxed_gpu_reference(self):
+        model = VerticalGradientParameters(
+            np.array([.005]), np.array([np.sqrt(6 / .005)]), .1,
+            np.array([1., 0., 0.]), .015, np.zeros((1, 2, 3)),
+        )
+        vg = SimpleNamespace(model=model, spectrum=lambda **options: spectrum(
+            transition_dipole_au=model.transition_dipole_au, **options,
+        ))
+        prepare_gpu = Mock(return_value=(self.geometry + .1, vg))
+        with patch.dict(sys.modules, {
+            "pyscf_esd.gpu_adiabatic": SimpleNamespace(prepare_gpu_vg=prepare_gpu),
+        }):
+            result = run_vibronic(("H", "H"), self.geometry, backend="gpu", model="vg", process="absorption")
+        prepare_gpu.assert_called_once()
+        np.testing.assert_allclose(result.diagnostics["ground_coordinates_bohr"], self.geometry + .1)
+        self.assertEqual(result.model_used, "vg")
+        self.mock_electronic.optimize_ground.assert_not_called()
 
     def test_internal_reference_retry_preserves_functional(self):
         prepare = self.mock_electronic.prepare_electronic

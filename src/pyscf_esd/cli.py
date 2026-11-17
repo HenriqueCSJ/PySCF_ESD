@@ -247,6 +247,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--output", type=Path, help="new result directory (default: XYZ name with .esd)")
     parser.add_argument("--model", choices=("auto", "ah", "vg"), default="auto",
                         help="automatic anharmonic screening, explicit harmonic AH, or explicit VG")
+    parser.add_argument("--backend", choices=("cpu", "gpu"), default="cpu",
+                        help="electronic backend (GPU uses analytic density-fitted derivatives)")
+    parser.add_argument("--solvent", help="named equilibrium C-PCM solvent for --backend gpu")
     parser.add_argument("--process", choices=("both", "absorption", "emission"), default="both")
     parser.add_argument("--state", type=int, default=1, help="singlet root number at relaxed S0 (1 = S1)")
     parser.add_argument("--charge", type=int, default=0)
@@ -269,6 +272,8 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("--sigma must be nonnegative and finite")
     if args.state < 1:
         parser.error("--state must be at least 1")
+    if args.solvent is not None and args.backend != "gpu":
+        parser.error("--solvent requires --backend gpu")
 
     payload = {"schema_version": 1, "pyscf_esd_version": _package_version(), "input_xyz": str(args.xyz.resolve()),
                "model_requested": args.model, "gaussian_sigma_cm^-1": args.sigma}
@@ -285,6 +290,7 @@ def main(argv: list[str] | None = None) -> int:
         try:
             result = run_vibronic(
                 symbols, geometry, settings, target_index=args.state-1, model=args.model, process=args.process,
+                backend=args.backend, solvent=args.solvent,
                 temperature_kelvin=args.temperature, max_quanta=args.max_quanta, max_overlaps=args.max_overlaps,
                 fallback_xc=args.fallback_xc,
                 progress=lambda message: print(f"pyscf-esd: {message}", file=sys.stderr, flush=True),

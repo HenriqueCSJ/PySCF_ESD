@@ -128,6 +128,7 @@ def _validate_center_options(
 def _prepare_vg_center(
     center: ElectronicPoint, target_index: int, *, stationary_tolerance: float,
     minimum_gap_hartree: float, ground_hessian_symmetry_tolerance: float,
+    ground_hessian: NDArray[np.float64] | None = None,
 ) -> CpuVibronicResult:
     """Apply the same central-state checks and construct VG on either device."""
     require_stable_reference(*center.reference_stability(), "Vertical-gradient center reference")
@@ -140,7 +141,7 @@ def _prepare_vg_center(
     if np.max(np.abs(ground_gradient)) > stationary_tolerance:
         raise ValueError("the supplied ground-state geometry is not stationary at the requested tolerance")
     excited_gradient = center.excited_gradient(target_index)
-    hessian = center.ground_hessian()
+    hessian = center.ground_hessian() if ground_hessian is None else ground_hessian
     hessian_transpose = hessian.transpose(1, 0, 3, 2)
     asymmetry = float(np.max(np.abs(hessian - hessian_transpose)))
     if asymmetry > ground_hessian_symmetry_tolerance:

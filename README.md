@@ -58,7 +58,7 @@ absorption = result.spectra["absorption"]
 fluorescence = result.spectra["emission"]
 ```
 
-`esd.run` takes a built, closed-shell molecule with a named all-electron spherical basis and uses its geometry, basis and charge. Choose `model="auto"`, `"ah"` or `"vg"` and use the zero-based `target_index` to select a singlet. The result includes `diagnostics` and `physical_properties`. The workflow runs gas-phase electronic calculations. For prepared solvated data use `esd.run_prepared_ah` and the [C-PCM setup](docs/using-methods.md#choosing-a-solvent). The [advanced CPU API](docs/using-methods.md#choosing-the-level-of-theory) is also available as `esd.Settings` and `esd.run_vibronic`.
+`esd.run` takes a built, closed-shell molecule with a named all-electron spherical basis and uses its geometry, basis and charge. Choose `model="auto"`, `"ah"` or `"vg"` and use the zero-based `target_index` to select a singlet. The result includes `diagnostics` and `physical_properties`. Use `backend="gpu"` for analytic GPU derivatives and add `solvent="cyclohexane"` for equilibrium C-PCM. The [advanced API](docs/using-methods.md#choosing-the-level-of-theory) is also available as `esd.Settings` and `esd.run_vibronic`.
 
 ## Default and options
 
@@ -92,13 +92,26 @@ AH uses the two endpoint curvatures and includes Duschinsky rotation and coheren
 </details>
 
 <details>
-<summary><strong>Prepared inputs, anharmonicity and NVIDIA GPU</strong></summary>
+<summary><strong>Analytic AH, automatic screening and VG on NVIDIA GPU</strong></summary>
+
+```bash
+pyscf-esd molecule.xyz --backend gpu --model ah --output gpu-ah.esd
+pyscf-esd molecule.xyz --backend gpu --model ah --solvent cyclohexane --output gpu-solvent.esd
+```
+
+The GPU workflow shares the optimizer and phase tracking with the CPU workflow. `ah` uses analytic S₀ and excited-state Hessians and a phase-matched analytic Herzberg–Teller derivative. `auto` uses the same GPU backend for electronic sampling of anharmonic cuts. `vg` relaxes S₀ and uses the analytic vertical gradient. Install a compatible [GPU4PySCF environment](https://pyscf.org/user/gpu.html#installation).
+
+For GPU AH use a compatible global hybrid LDA/GGA such as PBE0. The analytic route includes density fitting and XC quadrature response. PBE0 has built-in analytic fourth XC derivatives. Other functionals can require `PYSCF_ESD_LIBXC_LXC` pointing to a same-version LibXC library built with `MAXORDER=4`. Unsupported or failed analytic responses are reported as errors. The CPU DFT route retains checked local fits when analytic excited-state derivatives are unavailable on that backend. See the [GPU method guide](docs/using-methods.md#gpu-vg-ah-and-automatic-screening).
+
+</details>
+
+<details>
+<summary><strong>Prepared inputs and anharmonicity</strong></summary>
 
 - The [Python API](src/pyscf_esd/__init__.py) accepts prepared harmonic surfaces, supports periodic DVR with harmonic spectators at finite temperature, and exposes oscillator strengths and radiative properties.
 - Automatic local anharmonic corrections qualify at 0 K. A periodic rotor at finite temperature uses supplied phase-consistent torsional inputs and the [separable rotor example](examples/assemble_separable_rotor.py).
 - The [CF₃NO replay](examples/replay_cf3no_thermal.py) defaults to the retained PBE0/TDA model with one rotor and 11 spectators. SF-TDA is an explicit `--method sf-tda` alternative with Matplotlib for plotting. Both routes require the retained calculation archive, which is separate from this repository. The PBE0 comparison is a nuclear-model diagnostic with a restricted-reference instability.
-- The [GPU module](src/pyscf_esd/gpu.py) provides a Python VG route with a compatible [GPU4PySCF](https://github.com/pyscf/gpu4pyscf) installation. Prepared isolated solvated DF-RKS/TDA roots also have [analytic excited-state curvature](src/pyscf_esd/molecular_tda_hessian.py) and [analytic transition-dipole response](src/pyscf_esd/tda_dipole.py) under their documented restrictions.
-- The analytic curvature route needs fourth derivatives for the selected semilocal XC components. If the LibXC build bundled with PySCF lacks them, set `PYSCF_ESD_LIBXC_LXC` to a same-version LibXC shared library built with `MAXORDER=4`.
+- Prepared isolated DF-RKS/TDA roots use the same [analytic excited-state curvature](src/pyscf_esd/molecular_tda_hessian.py) and [analytic transition-dipole response](src/pyscf_esd/tda_dipole.py) in vacuum or equilibrium C-PCM.
 
 </details>
 

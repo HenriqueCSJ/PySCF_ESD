@@ -249,6 +249,8 @@ def run_vibronic(
     *,
     target_index: int = 0,
     model: Literal["auto", "ah", "vg"] = "auto",
+    backend: Literal["cpu", "gpu"] = "cpu",
+    solvent: str | None = None,
     process: Literal["both", "absorption", "emission"] = "both",
     temperature_kelvin: float = 0.0,
     coverage: float = 0.995,
@@ -266,6 +268,9 @@ def run_vibronic(
     cannot be qualified raises WorkflowIncomplete with available diagnostics.
     ``model="ah"`` requests the harmonic calculation directly and ``model="vg"``
     explicitly requests the vertical-gradient approximation.
+    The GPU backend uses analytic DF LR-TDA derivatives. Its optional solvent
+    name selects equilibrium C-PCM. An unsupported analytic response fails
+    with the reason recorded in the run error.
     An internal orbital instability can retry the same restricted model.
     Supply ordered ``fallback_xc`` alternatives to permit a fresh electronic
     preparation after a restricted-to-unrestricted instability. The target
@@ -273,6 +278,10 @@ def run_vibronic(
     """
     if model not in ("auto", "ah", "vg"):
         raise ValueError("model must be auto, ah or vg")
+    if backend not in ("cpu", "gpu"):
+        raise ValueError("backend must be cpu or gpu")
+    if solvent is not None and (not isinstance(solvent, str) or not solvent.strip() or backend != "gpu"):
+        raise ValueError("a named equilibrium C-PCM solvent requires backend='gpu'")
     _validate_spectral_options(process, temperature_kelvin, coverage, max_quanta, max_overlaps)
     if isinstance(target_index, bool) or not isinstance(target_index, Integral) or target_index < 0:
         raise ValueError("target_index must be an integer >= 0")
@@ -299,43 +308,52 @@ def run_vibronic(
     try:
         result = _prepare_reference(
             lambda candidate: _run_vibronic_model(
-                symbols, geometry, candidate, target_index=target_index, model=model, process=process,
+                symbols, geometry, candidate, target_index=target_index, model=model, backend=backend,
+                solvent=solvent, process=process,
                 temperature_kelvin=temperature_kelvin, coverage=coverage, max_quanta=max_quanta,
                 max_overlaps=max_overlaps, progress=progress,
             ),
             settings, fallback_xc, attempts, progress,
         )
     except WorkflowIncomplete as error:
-        error.diagnostics.update(settings_requested=requested, reference_attempts=attempts)
+        error.diagnostics.update(settings_requested=requested, reference_attempts=attempts,
+                                 electronic_backend=backend, solvent=solvent)
         raise
     except (ElectronicConvergenceError, StateTrackingError) as error:
         stage = "electronic_vg" if model == "vg" else "electronic_ah"
         raise WorkflowIncomplete(str(error), {
             "settings_requested": requested, "reference_attempts": attempts, "stage": stage,
+            "electronic_backend": backend, "solvent": solvent,
         }) from error
     result.diagnostics.update(settings_requested=requested, reference_attempts=attempts)
     return result
 
 
 def _run_vibronic_model(
-    symbols, geometry, settings, *, target_index, model, process, temperature_kelvin,
+    symbols, geometry, settings, *, target_index, model, backend, solvent, process, temperature_kelvin,
     coverage, max_quanta, max_overlaps, progress,
 ) -> VibronicResult:
     from .electronic_workflow import optimize_ground, prepare_electronic
 
     diagnostics = {
         "settings": asdict(settings), "reference_target_index": int(target_index),
+        "electronic_backend": backend, "solvent": solvent,
         "atom_symbols": list(symbols),
         "temperature_kelvin": float(temperature_kelvin), "target_coverage": float(coverage),
         "basis_attempts": {},
     }
     if model == "vg":
-        from .cpu_workflow import run_cpu_vibronic
-
         if progress is not None:
             progress("Optimizing S0 and evaluating the vertical-gradient model")
-        ground = optimize_ground(symbols, geometry, settings)
-        vg = run_cpu_vibronic(symbols, ground, settings, target_index=target_index)
+        if backend == "gpu":
+            from .gpu_adiabatic import prepare_gpu_vg
+
+            ground, vg = prepare_gpu_vg(symbols, geometry, settings, target_index=target_index, solvent=solvent)
+        else:
+            from .cpu_workflow import run_cpu_vibronic
+
+            ground = optimize_ground(symbols, geometry, settings)
+            vg = run_cpu_vibronic(symbols, ground, settings, target_index=target_index)
         diagnostics["ground_coordinates_bohr"] = np.asarray(ground).tolist()
         diagnostics["gap_00_hartree"] = vg.model.gap_00_hartree
         diagnostics["harmonic_reference"] = harmonic_model_properties(vg.model)
@@ -345,10 +363,17 @@ def _run_vibronic_model(
     else:
         if progress is not None:
             progress("Optimizing S0 and the tracked singlet and checking electronic derivatives")
-        electronic = prepare_electronic(
-            symbols, geometry, settings, target_index=target_index,
-            direct_dipole=model == "auto" and len(symbols) == 2,
-        )
+        direct_dipole = model == "auto" and len(symbols) == 2
+        if backend == "gpu":
+            from .gpu_adiabatic import prepare_gpu_electronic
+
+            electronic = prepare_gpu_electronic(
+                symbols, geometry, settings, target_index=target_index, direct_dipole=direct_dipole, solvent=solvent,
+            )
+        else:
+            electronic = prepare_electronic(
+                symbols, geometry, settings, target_index=target_index, direct_dipole=direct_dipole,
+            )
         diagnostics.update(
             electronic=electronic.diagnostics,
             ground_coordinates_bohr=electronic.ground_coordinates_bohr.tolist(),

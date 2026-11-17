@@ -17,10 +17,13 @@ from .cpu import (
     ScfAttempt,
     Settings,
     _checked_array,
+    _project_density,
+    _restricted_stability,
     _MAX_DENSE_TDA_DIMENSION,
     _readonly,
     _TDA_RESPONSE_BLOCK_SIZE,
     build_molecule,
+    require_stable_reference,
 )
 
 if TYPE_CHECKING:
@@ -32,6 +35,7 @@ class GpuElectronicPoint(ElectronicPoint):
     """Device-resident RKS/TDA state with read-only NumPy electronic data."""
 
     hessian_grid_response: bool = False
+    excited_grid_response: bool = False
 
     def ground_gradient(self) -> NDArray[np.float64]:
         """Return the analytic S0 gradient with grid response in Hartree/bohr."""
@@ -50,6 +54,20 @@ class GpuElectronicPoint(ElectronicPoint):
             gradient = self._tda.Gradients()
             gradient.cphf_max_cycle = self.settings.cphf_max_cycle
             gradient.cphf_conv_tol = self.settings.cphf_conv_tol
+            if self.excited_grid_response:
+                from gpu4pyscf.grad import rks
+
+                from .tda_dipole import _moving_grid_tda_gradient
+
+                mf = self._mean_field
+                native = _moving_grid_tda_gradient(gradient, self._tda.xy[root_index][0], include_nuclear=True)
+                # The native TD force includes the RKS force at fixed quadrature.
+                args = (mf._numint, mf.mol, mf.grids, mf.xc, mf.make_rdm1())
+                weights, moving = rks.get_exc_full_response(*args)
+                _, fixed = rks.get_exc(*args)
+                return _fp64_host(native + _fp64_host(
+                    weights + 2 * (moving - fixed), (self.mol.natm, 3), "RKS grid response",
+                ), (self.mol.natm, 3), "moving-grid excited-state gradient")
             return _fp64_host(
                 gradient.kernel(state=int(root_index) + 1),
                 (self.mol.natm, 3), "excited-state gradient",
@@ -57,16 +75,8 @@ class GpuElectronicPoint(ElectronicPoint):
 
     def ground_hessian(self) -> NDArray[np.float64]:
         """Return the analytic S0 Hessian in PySCF order and Hartree/bohr²."""
-        with self._mean_field.mo_coeff.device:
-            hessian = self._mean_field.Hessian()
-            hessian.grid_response = self.hessian_grid_response
-            hessian.max_cycle = self.settings.cphf_max_cycle
-            natm = self.mol.natm
-            hessian.solve_mo1 = partial(_checked_hessian_response, hessian, hessian.solve_mo1)
-            try:
-                return _fp64_host(hessian.kernel(), (natm, natm, 3, 3), "ground-state Hessian")
-            finally:
-                del hessian.solve_mo1
+        return _ground_hessian(self._mean_field, self.settings, self.mol.natm,
+                               grid_response=self.hessian_grid_response)
 
     def reference_stability(self) -> tuple[bool, bool]:
         """Return GPU4PySCF's internal and external RKS stability flags."""
@@ -111,17 +121,21 @@ def solve_point(
     *,
     previous: OrbitalSeed | ElectronicPoint | None = None,
     hessian_grid_response: bool = False,
+    density_fitting: bool = False,
+    solvent: str | None = None,
 ) -> GpuElectronicPoint:
-    """Solve one all-electron closed-shell PBE0/TDA point with native GPU operators.
+    """Solve one all-electron closed-shell TDA point with native GPU operators.
 
     The analytic VG route uses the primary unpruned grid for all response
     steps. The default fixed-grid ground Hessian matches the effective CPU
     route. ``hessian_grid_response=True`` requests GPU4PySCF's grid response.
-    GPU4PySCF's analytic TD-RKS gradient has no grid-response switch.
+    The DF workflow also includes the analytic excited-state grid response.
     """
-    if previous is not None:
+    if not density_fitting and previous is not None:
         raise ValueError("GPU solve_point does not support an orbital seed")
-    if settings.xc.strip().upper() != "PBE0":
+    if not density_fitting and solvent is not None:
+        raise ValueError("GPU C-PCM requires the density-fitted workflow")
+    if not density_fitting and settings.xc.strip().upper() != "PBE0":
         raise ValueError("the direct GPU backend requires PBE0")
     if not isinstance(hessian_grid_response, (bool, np.bool_)):
         raise ValueError("hessian_grid_response must be a boolean")
@@ -130,24 +144,20 @@ def solve_point(
     nocc = mol.nelectron // 2
     if settings.nstates > nocc * (mol.nao_nr() - nocc):
         raise ValueError("nstates exceeds the number of occupied–virtual pairs")
-    cupy, mean_field = _make_mean_field(mol, settings)
-    mean_field.kernel()
-    residual, coefficients = _scf_residual(mean_field, cupy)
-    attempt = ScfAttempt(
-        "gpu_minao_diis", bool(mean_field.converged), residual,
-        bool(mean_field.converged and residual <= settings.scf_residual_tol),
+    cupy, mean_field, residual, coefficients, attempts = _solve_gpu_reference(
+        mol, settings, previous, density_fitting=density_fitting, solvent=solvent,
     )
-    if not attempt.accepted:
-        raise ElectronicConvergenceError(f"GPU RKS did not meet convergence checks: {attempt}")
 
     nvir = coefficients.shape[1] - nocc
     if settings.nstates > nocc * nvir:
         raise ValueError("nstates exceeds the retained occupied–virtual dimension")
-    td = mean_field.TDA()
+    td = mean_field.TDA() if solvent is None else mean_field.TDA(equilibrium_solvation=True)
     td.singlet = True
     td.wfnsym = None
     td.nstates = int(settings.nstates)
     td.conv_tol = settings.td_residual_tol * 0.2
+    if density_fitting:
+        td.lindep = min(td.lindep, 0.2 * td.conv_tol**2)
     td.max_cycle = int(settings.max_cycle)
     td.chkfile = None
     td.positive_eig_threshold = 0.0
@@ -165,9 +175,10 @@ def solve_point(
         mol=mol, settings=settings, mo_coeff=_readonly(coefficients), nocc=nocc,
         amplitudes=_readonly(amplitudes), excitation_energies_hartree=_readonly(roots),
         transition_dipoles_au=_readonly(dipoles), ground_energy_hartree=float(mean_field.e_tot),
-        scf_residual=residual, tda_residuals=_readonly(ratios), attempts=(attempt,),
+        scf_residual=residual, tda_residuals=_readonly(ratios), attempts=attempts,
         _mean_field=mean_field, _tda=td, tda_route=tda_route,
         hessian_grid_response=bool(hessian_grid_response),
+        excited_grid_response=density_fitting,
     )
 
 
@@ -191,7 +202,21 @@ def run_gpu_vibronic(
     return _prepare_vg_center(center, target_index, **center_options)
 
 
-def _make_mean_field(mol, settings):
+def _ground_hessian(mean_field, settings, natm, *, grid_response):
+    with mean_field.mo_coeff.device:
+        hessian = mean_field.Hessian()
+        hessian.grid_response = grid_response
+        hessian.max_cycle = settings.cphf_max_cycle
+        if getattr(mean_field, "with_df", None) is not None:
+            hessian.auxbasis_response = 2
+        hessian.solve_mo1 = partial(_checked_hessian_response, hessian, hessian.solve_mo1)
+        try:
+            return _fp64_host(hessian.kernel(), (natm, natm, 3, 3), "ground-state Hessian")
+        finally:
+            del hessian.solve_mo1
+
+
+def _make_mean_field(mol, settings, *, density_fitting=False, solvent=None):
     try:
         import cupy
         from gpu4pyscf.dft.rks import RKS
@@ -202,10 +227,17 @@ def _make_mean_field(mol, settings):
         raise RuntimeError("the GPU backend requires a visible CUDA device")
     if mol.has_ecp() or getattr(mol, "pseudo", None):
         raise ValueError("the direct GPU backend requires an all-electron basis")
-    if max(mol.bas_angular(shell) for shell in range(mol.nbas)) > min(j_engine.LMAX, jk.LMAX):
+    if (not density_fitting and
+            max(mol.bas_angular(shell) for shell in range(mol.nbas)) > min(j_engine.LMAX, jk.LMAX)):
         raise ValueError("basis angular momentum exceeds the native GPU direct J/K limit")
 
-    mean_field = RKS(mol, xc="pbe0")
+    mean_field = RKS(mol, xc=settings.xc if density_fitting else "pbe0")
+    if density_fitting:
+        mean_field = mean_field.density_fit()
+    if solvent is not None:
+        mean_field = mean_field.PCM(solvent)
+        mean_field.with_solvent.method = "C-PCM"
+        mean_field.with_solvent.equilibrium_solvation = True
     mean_field.grids.level = int(settings.grid_level)
     mean_field.grids.prune = None
     mean_field.cphf_grids = mean_field.grids
@@ -216,7 +248,7 @@ def _make_mean_field(mol, settings):
     mean_field.max_cycle = int(settings.max_cycle)
     mean_field.conv_check = True
     mean_field.init_guess = "minao"
-    mean_field.direct_scf = True
+    mean_field.direct_scf = not density_fitting
     mean_field.direct_scf_tol = settings.direct_scf_tol
     mean_field.diis = True
     mean_field.DIIS = diis.SCF_DIIS
@@ -227,6 +259,55 @@ def _make_mean_field(mol, settings):
     mean_field.damp = 0.0
     mean_field.chkfile = None
     return cupy, mean_field
+
+
+def _solve_gpu_reference(mol, settings, previous, *, density_fitting, solvent):
+    """Solve the same electronic model from projected and fresh restricted guesses."""
+    routes = [("gpu_minao_diis", None)]
+    attempts = []
+    if previous is not None:
+        try:
+            projected = _project_density(previous, mol, settings)
+        except np.linalg.LinAlgError:
+            attempts.append(ScfAttempt("gpu_projected_diis", False, None, False))
+        else:
+            routes.insert(0, ("gpu_projected_diis", projected))
+
+    def solve(route, density=None):
+        cupy, mf = _make_mean_field(mol, settings, density_fitting=density_fitting, solvent=solvent)
+        mf.kernel(dm0=None if density is None else cupy.asarray(density))
+        try:
+            residual, coefficients = _scf_residual(mf, cupy)
+        except ElectronicConvergenceError:
+            residual, coefficients = None, None
+        accepted = bool(mf.converged and residual is not None and residual <= settings.scf_residual_tol)
+        attempts.append(ScfAttempt(route, bool(mf.converged), residual, accepted))
+        return cupy, mf, residual, coefficients
+
+    for route, density in routes:
+        cupy, mf, residual, coefficients = solve(route, density)
+        if attempts[-1].accepted:
+            break
+    else:
+        raise ElectronicConvergenceError(f"GPU RKS did not meet convergence checks: {attempts}")
+
+    if density_fitting and settings.stability_checks == "all":
+        stage = "GPU SCF reference at a sampled geometry"
+        with mf.mo_coeff.device:
+            for retry in range(5):
+                rotated, _, internal, _ = _restricted_stability(mf, stage, internal=True, external=False)
+                if internal:
+                    _, _, _, external = _restricted_stability(mf, stage, internal=False, external=True)
+                    require_stable_reference(True, external, stage)
+                    break
+                require_stable_reference(retry < 4, True, stage)
+                energy = float(mf.e_tot)
+                density = mf.make_rdm1(mo_coeff=rotated, mo_occ=mf.mo_occ)
+                cupy, mf, residual, coefficients = solve("gpu_stability_rotation_diis", density)
+                require_stable_reference(
+                    attempts[-1].accepted and float(mf.e_tot) < energy - settings.scf_conv_tol, True, stage,
+                )
+    return cupy, mf, residual, coefficients, tuple(attempts)
 
 
 def _scf_residual(mean_field, cupy):
@@ -253,7 +334,8 @@ def _scf_residual(mean_field, cupy):
     # and the incremental potential from the SCF iterations.
     density = mean_field.make_rdm1()
     _require_device_fp64(density, cupy, "RKS density")
-    fock = mean_field.get_hcore() + mean_field.get_veff(dm=density)
+    # PCM adds its tagged reaction-field potential in get_fock.
+    fock = mean_field.get_fock(dm_or_wfn=density)
     _require_device_fp64(fock, cupy, "fresh RKS Fock matrix")
     gradient = mean_field.get_grad(mo, mean_field.mo_occ, fock)
     _require_device_fp64(gradient, cupy, "RKS orbital gradient")

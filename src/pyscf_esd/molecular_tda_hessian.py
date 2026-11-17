@@ -1,4 +1,4 @@
-"""Analytic nuclear curvature of isolated molecular RKS/TDA/C-PCM roots."""
+"""Analytic nuclear curvature of isolated molecular RKS/TDA roots."""
 
 from dataclasses import dataclass
 
@@ -143,16 +143,21 @@ class _MolecularTDAOperator:
 
     def solvent_derivatives(self):
         """Get analytic fixed-density solvent terms in PySCF's native AO order."""
+        pcm = getattr(self.mf, "with_solvent", None)
+        nao = self.mf.mol.nao
+        ncart = 3 * self.mf.mol.natm
+        if pcm is None:
+            zero_potential = np.broadcast_to(0.0, (ncart, nao, nao))
+            return (zero_potential,) * 3, np.broadcast_to(0.0, (ncart, ncart))
+
         import cupy as cp
         from pyscf import lib
         from gpu4pyscf.solvent.hessian.pcm import analytical_grad_vmat
 
-        pcm = self.mf.with_solvent
         ground = cp.asarray(self.ground)
         relaxed = cp.asarray(self.relaxed_density)
         transition = cp.asarray((self.transition + self.transition.T) * 0.5)
         zero = cp.zeros_like(ground)
-        nao = self.mf.mol.nao
         basis, mask = cp.eye(nao), cp.ones(nao)
 
         def gradient(density):
@@ -167,7 +172,6 @@ class _MolecularTDAOperator:
             r1 = gradient(relaxed) - base
             ground_hessian = (pcm.hess(ground + relaxed) - pcm.hess(ground - relaxed)) * 0.5
             transition_hessian = pcm.hess(transition) + pcm.hess(-transition) - 2 * pcm.hess(zero)
-        ncart = self.mf.mol.natm * 3
         fixed_hessian = (ground_hessian + 2 * transition_hessian).transpose(0, 2, 1, 3).reshape(ncart, ncart)
         gradients = tuple(cp.asnumpy(array.reshape(ncart, nao, nao)) for array in (v1, t1, r1))
         return gradients, cp.asnumpy(fixed_hessian)
@@ -216,8 +220,9 @@ def analytic_molecular_tda_hessian(
 ) -> MolecularTDAHessian:
     """Differentiate a solved GPU4PySCF restricted equilibrium LR-TDA root.
 
-    Uses global hybrid LDA/GGA, the unpruned primary grid, Coulomb-metric DF
-    for both J and K, and the same equilibrium C-PCM cavity for SCF and TDA.
+    Uses global hybrid LDA/GGA, the primary grid without density cutoff, and
+    Coulomb-metric DF for J and K, in vacuum or with one equilibrium SWIG
+    C-PCM cavity.
     First and mixed nuclear derivatives are evaluated at the supplied geometry.
     The Cartesian response and one adjoint account for orbital relaxation.
     """
@@ -226,7 +231,7 @@ def analytic_molecular_tda_hessian(
     from gpu4pyscf.df.df import DF
 
     from .gpu import _checked_hessian_response
-    from .tda_dipole import _target_root, _validate_reference
+    from .tda_dipole import _equilibrium_ground_solvation, _target_root, _validate_reference, _validate_shared_cavity
     from .tda_xc_curvature import require_semilocal_xc_fourth
 
     mf = _validate_reference(td)
@@ -234,28 +239,22 @@ def analytic_molecular_tda_hessian(
             or getattr(mf, "only_dfj", False) or mf.disp):
         raise ValueError("analytic TDA curvature requires all-electron spherical AOs and DF J/K without dispersion")
     require_semilocal_xc_fourth(mf.xc)
-    ground_pcm, transition_pcm = mf.with_solvent, td.with_solvent
-    if (ground_pcm.get_eps() != transition_pcm.get_eps()
-            or ground_pcm.lebedev_order != transition_pcm.lebedev_order
-            or ground_pcm.vdw_scale != transition_pcm.vdw_scale
-            or ground_pcm.r_probe != transition_pcm.r_probe
-            or ground_pcm.surface_discretization_method.upper() != "SWIG"
-            or transition_pcm.surface_discretization_method.upper() != "SWIG"):
-        raise ValueError("the RKS and TDA responses must use the same equilibrium SWIG cavity")
     if any(not np.isfinite(tol) or tol <= 0 for tol in (cphf_tolerance, response_tolerance, root_gap_tolerance)):
         raise ValueError("response tolerances must be finite and positive")
 
-    with mf.mo_coeff.device, lib.temporary_env(mf, conv_tol_cpscf=cphf_tolerance), lib.temporary_env(
-        ground_pcm, equilibrium_solvation=True,
+    with (
+        mf.mo_coeff.device,
+        lib.temporary_env(mf, conv_tol_cpscf=cphf_tolerance),
+        _equilibrium_ground_solvation(mf),
     ):
-        for key in ("grid_coords", "charge_exp", "switch_fun", "gslice_by_atom"):
-            if (key not in ground_pcm.surface or key not in transition_pcm.surface
-                    or not bool(cp.array_equal(cp.asarray(ground_pcm.surface[key]), cp.asarray(transition_pcm.surface[key])))):
-                raise ValueError("the stored RKS and TDA cavities differ")
+        _validate_shared_cavity(td)
         nocc = int(cp.count_nonzero(mf.mo_occ == 2))
         shape = nocc, mf.mo_coeff.shape[1] - nocc
         x, omega, separation = _target_root(td, root_index, shape, root_gap_tolerance)
         q = x / np.linalg.norm(x)
+        molecular_core = mf.mol.intor_symmetric("int1e_kin") + mf.mol.intor_symmetric("int1e_nuc")
+        if not cp.allclose(cp.asarray(mf.get_hcore()), cp.asarray(molecular_core), atol=1e-8, rtol=1e-10):
+            raise ValueError("the RKS core Hamiltonian differs from the analytic molecular integrals")
         model = _MolecularTDAOperator(td, q, cphf_tolerance=cphf_tolerance, max_cycle=max_cycle)
         model.check_df_reference()
         operator, diagonal = td.gen_vind()
@@ -290,7 +289,7 @@ def analytic_molecular_tda_hessian(
             progress("ground_hessian", 1, 1)
 
         solvent_gradients, solvent_hessian = model.solvent_derivatives()
-        if progress is not None:
+        if progress is not None and ground_pcm is not None:
             progress("fixed_density_solvent", 1, 1)
         fixed_hessian = model.density_fitting_hessian() + solvent_hessian
         if progress is not None:

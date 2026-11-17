@@ -147,6 +147,10 @@ def _symmetric_analytic_hessian(hessian: _Real, state: str) -> _Real:
 
 
 class _ElectronicSession:
+    cache_size = _CACHE_SIZE
+    quadrature_grid_response = False
+    ground_hessian_route = "analytic_pyscf_rks"
+
     def __init__(self, symbols: Sequence[str], coordinates: ArrayLike, settings: Settings):
         from pyscf import dft
         from pyscf.scf.dispersion import parse_dft
@@ -186,10 +190,9 @@ class _ElectronicSession:
         self.gaps: list[float] = []
         self.visited_roots: set[int] = set()
 
-    @staticmethod
-    def _remember(cache: OrderedDict, point):
+    def _remember(self, cache: OrderedDict, point):
         cache[point.coordinates.tobytes()] = point
-        if len(cache) > _CACHE_SIZE:
+        if len(cache) > self.cache_size:
             cache.popitem(last=False)
         return point
 
@@ -201,13 +204,19 @@ class _ElectronicSession:
             self.ground_cache_hits += 1
             return known
         molecule = build_molecule(self.symbols, coordinates, self.settings)
-        reference, _, _ = _solve_reference(molecule, self.settings, None if previous is None else previous.seed)
-        gradient = reference.nuc_grad_method()
-        gradient.grid_response = True
-        force = _checked_array(gradient.kernel(), coordinates.shape, "ground-state gradient")
-        seed = OrbitalSeed(molecule, reference.mo_coeff, molecule.nelectron // 2, self.settings)
+        reference, seed = self._ground_reference(molecule, None if previous is None else previous.seed)
+        force = self._ground_gradient(reference, coordinates.shape)
         self.ground_solves += 1
         return self._remember(self.ground_cache, _GroundPoint(coordinates, seed, float(reference.e_tot), force, reference))
+
+    def _ground_reference(self, molecule, previous):
+        reference, _, _ = _solve_reference(molecule, self.settings, previous)
+        return reference, OrbitalSeed(molecule, reference.mo_coeff, molecule.nelectron // 2, self.settings)
+
+    def _ground_gradient(self, reference, shape):
+        gradient = reference.nuc_grad_method()
+        gradient.grid_response = True
+        return _checked_array(gradient.kernel(), shape, "ground-state gradient")
 
     def ground_hessian(self, point: _GroundPoint) -> _Real:
         solver = point.mean_field.Hessian()
@@ -786,9 +795,15 @@ def prepare_electronic(
     stationary point, or poorly matched vibrational subspaces stops preparation.
     Set ``direct_dipole`` when the nuclear solver uses the sampled dipole field.
     """
+    return _prepare_electronic(
+        _ElectronicSession(symbols, coordinates_bohr, settings),
+        target_index=target_index, direct_dipole=direct_dipole,
+    )
+
+
+def _prepare_electronic(session, *, target_index, direct_dipole):
     if isinstance(target_index, (bool, np.bool_)) or not isinstance(target_index, Integral):
         raise ValueError("target_index must be a zero-based integer")
-    session = _ElectronicSession(symbols, coordinates_bohr, settings)
     if not 0 <= target_index < session.root_dimension:
         raise ValueError(f"target index {target_index} is outside this basis's {session.root_dimension} singlet TDA pairs")
     grounds, ground_diagnostics = _prepare_ground(session)
@@ -854,8 +869,9 @@ def prepare_electronic(
                 transition_dipole_at_ground_au=tracker.dipole,
                 direct_transition_dipole_at_excited_au=excited.dipole @ model.excited_alignment_rotation,
             ),
-            "ground_hessian": {"route": "analytic_pyscf_rks", "quadrature_grid_response": False},
-            "excited_gradient_quadrature_grid_response": False,
+            "ground_hessian": {"route": session.ground_hessian_route,
+                               "quadrature_grid_response": session.quadrature_grid_response},
+            "excited_gradient_quadrature_grid_response": session.quadrature_grid_response,
             "excited_reference_internal_stability": True,
             "excited_reference_external_stability": True,
             "excited_hessian": excited.curvature_diagnostics,

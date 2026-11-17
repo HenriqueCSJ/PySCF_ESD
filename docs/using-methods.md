@@ -10,7 +10,7 @@ In a PySCF script, use `from pyscf import esd`. The [`esd.run(mol, ...)` example
 | CPU adiabatic Hessian (AH) with Duschinsky rotation and Herzberg–Teller (HT) | [`--model ah`](#from-a-single-xyz) |
 | CPU vertical gradient (VG) with a constant dipole | [`--model vg`](#from-a-single-xyz) |
 | Explicit finite differences for HT or excited-state curvature | [`run_cpu_vibronic`](#explicit-central-differences-on-cpu) |
-| Analytic VG on NVIDIA GPU | [`run_gpu_vibronic`](#gpu-vertical-gradient) |
+| Analytic VG, AH and automatic screening on NVIDIA GPU | [`--backend gpu`](#gpu-vg-ah-and-automatic-screening) |
 | SF-TDA roots, optical transitions and analytic gradients | [`solve_spin_flip_tda`](#spin-flip-tda-on-gpu) |
 | Analytic Hessian and HT derivative for isolated LR-TDA/C-PCM roots | [Prepared C-PCM derivatives](#analytic-derivatives-for-prepared-c-pcm-roots) |
 | AH with custom electronic data or selected FC, HT and Duschinsky terms | [`run_prepared_ah` and `harmonic_spectrum`](#spectra-from-prepared-electronic-data) |
@@ -56,7 +56,7 @@ def gas_phase_spectra(symbols, coordinates_bohr):
 
 ## Choosing a solvent
 
-The XYZ command currently runs in the gas phase. For the prepared analytic C-PCM route, select the solvent on the GPU4PySCF RKS object. Examples include `cyclohexane`, `water`, `n-hexane` and `acetonitrile`. Named solvents use the [PySCF solvent parameters](https://pyscf.org/user/solvent.html#solvent-parameters). Set `mf.with_solvent.eps` to override the static dielectric constant. Solvent selection changes the electronic calculation. The ESD temperature controls the vibrational populations.
+Use `--backend gpu --solvent cyclohexane` from XYZ or `backend="gpu", solvent="cyclohexane"` in `esd.run`. Examples include `water`, `n-hexane` and `acetonitrile`. Named solvents use the [PySCF solvent parameters](https://pyscf.org/user/solvent.html#solvent-parameters). With prepared inputs, set `mf.with_solvent.eps` to override the static dielectric constant. Solvent selection changes the electronic calculation. The ESD temperature controls the vibrational populations.
 
 ```python
 from gpu4pyscf import dft
@@ -97,9 +97,25 @@ def numerical_vg(symbols, coordinates_bohr):
 
 Inspect `result.normal_dipole_derivatives_au` and `result.excited_hessian_hartree_per_bohr2`. `result.spectrum(process="absorption")` includes available HT by default. Set `include_ht=False` on the spectrum call for a constant dipole. The spectrum retains the VG curvatures. The optional excited-state Hessian describes S₁ at the **supplied S₀ geometry**. AH uses S₁ curvature at the relaxed S₁ geometry. See the [CPU workflow API](../src/pyscf_esd/cpu_workflow.py).
 
-## GPU vertical gradient
+## GPU VG, AH and automatic screening
 
-Follow the [GPU4PySCF installation instructions](https://pyscf.org/user/gpu.html#installation) for CUDA and compatible libraries. From a stationary ground geometry in bohr, this route obtains the analytic ground Hessian and vertical excited-state gradient.
+Follow the [GPU4PySCF installation instructions](https://pyscf.org/user/gpu.html#installation). The main command and PySCF module support all three models on this backend.
+
+```bash
+pyscf-esd molecule.xyz --backend gpu --model ah --temperature 298 --output gpu-ah.esd
+```
+
+```python
+from pyscf import esd
+
+def gpu_spectra(mol):
+    return esd.run(mol, backend="gpu", model="ah", xc="pbe0")
+```
+
+AH follows the same closed-shell singlet through both geometry optimizations, computes analytic Hessians at the minima, and projects the signed analytic transition-dipole derivative at S₀ onto its normal modes. Absorption and fluorescence use the shared Duschinsky and linear HT model. The differentiations include the moving XC quadrature and DF response. Failure of a derivative or state-continuity check ends the GPU run with its reason. The automatic model can sample electronic energies and dipoles for nuclear anharmonicity on the GPU. These surface samples are distinct from numerical estimates of electronic derivatives.
+
+The electronic workflow uses CUDA for GPU4PySCF response calculations and host routines for parts of derivative assembly, state tracking and the nuclear calculation. For the original direct-J/K VG route at a **supplied stationary ground geometry**, use the single-geometry API below.
+
 
 ```python
 from pyscf_esd.cpu import Settings
@@ -140,7 +156,7 @@ The [SF API](../src/pyscf_esd/gpu_spin_flip.py) operates at a supplied geometry.
 
 ## Analytic derivatives for prepared C-PCM roots
 
-Supply solved, isolated singlet roots of GPU4PySCF restricted LR-TDA with equilibrium linear-response C-PCM, a real global hybrid LDA/GGA functional and a shared RKS and CPHF grid with `small_rho_cutoff = 0`. The analytic Hessian requires a matching SWIG cavity, spherical all-electron basis, Coulomb-metric DF for J and K and fourth XC derivatives. See the [installation note](../README.md#default-and-options) for `PYSCF_ESD_LIBXC_LXC` and the [integration test setup](../tests/test_molecular_tda_hessian.py) for the grid and cavity. Solve through at least one root above the target or provide the complete occupied–virtual spectrum.
+Supply solved, isolated singlet roots of GPU4PySCF restricted LR-TDA in vacuum or equilibrium linear-response C-PCM, a real global hybrid LDA/GGA functional and a shared RKS and CPHF grid with `small_rho_cutoff = 0`. The analytic Hessian requires a spherical all-electron basis, Coulomb-metric DF for J and K, fourth XC derivatives and a matching SWIG cavity when solvent is present. See the [installation note](../README.md#default-and-options) for `PYSCF_ESD_LIBXC_LXC` and the [integration test setup](../tests/test_molecular_tda_hessian.py) for the grid and cavity. Solve through at least one root above the target or provide the complete occupied–virtual spectrum.
 
 ```python
 from pyscf_esd import analytic_molecular_tda_hessian, analytic_tda_transition_dipole

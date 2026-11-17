@@ -1,21 +1,129 @@
 """Same-geometry checks of the analytic TDA transition-dipole algebra."""
 
+from contextlib import nullcontext
 from importlib.util import find_spec
 from types import SimpleNamespace
 import unittest
+from unittest.mock import patch
 
 import numpy as np
 
 from pyscf_esd.tda_dipole import (
+    _checked_gradient_cphf,
     _fixed_amplitude_dipole_derivative,
+    _moving_grid_tda_gradient,
     _polarized_gradient,
     _rigid_motion_errors,
+    _solve_gradient_response,
     _target_root,
 )
+from pyscf_esd.cpu import ElectronicConvergenceError
 from pyscf_esd.tda_hessian import prepare_tda_root_response
 
 
+cphf = None  # The cloned native gradient receives its own CPHF binding.
+
+
 class TDADipoleTests(unittest.TestCase):
+    @unittest.skipUnless(find_spec("pyscf"), "PySCF is required for the native gradient wrapper")
+    def test_vacuum_gradient_recovers_the_native_response_densities(self):
+        ground = np.array([[2., 0.], [0., 0.]])
+        relaxed = np.array([[-.14, .03], [.03, .14]])
+        transition = np.array([[0., 0.], [1 / np.sqrt(2), 0.]])
+        electronic = np.array([[1., 2., 3.]])
+        nuclear = np.array([[4., 5., 6.]])
+        moving_grid = np.array([[.1, .2, .3]])
+        mf = SimpleNamespace(mol=SimpleNamespace(nao=2, natm=1), make_rdm1=lambda: ground)
+
+        class Gradient:
+            base = SimpleNamespace(_scf=mf)
+
+            def jk_energies_per_atom(self, pairs, j_factor, k_factor, *, sum_results):
+                return electronic
+
+            def grad_elec(self, xy, singlet):
+                pairs = [[ground + 2 * relaxed, ground], [transition, transition.T]]
+                return self.jk_energies_per_atom(pairs, [1., 8.], [.25, 2.], sum_results=True)
+
+            def kernel(self, xy, singlet):
+                return self.grad_elec(xy, singlet) + nuclear
+
+        gradient = Gradient()
+        native_jk = gradient.jk_energies_per_atom
+        with (
+            patch.dict("sys.modules", {"cupy": np}),
+            patch("pyscf_esd.tda_dipole._checked_gradient_cphf", return_value=nullcontext(gradient)),
+            patch("pyscf_esd.tda_xc_grid.moving_xc_grid_correction", return_value=moving_grid) as correction,
+        ):
+            for total in (False, True):
+                calculated = _moving_grid_tda_gradient(gradient, [[1 / np.sqrt(2)]], include_nuclear=total)
+                expected = electronic + moving_grid + (nuclear if total else 0)
+                np.testing.assert_allclose(calculated, expected)
+                reference, difference, spin_summed = correction.call_args.args
+                self.assertIs(reference, mf)
+                np.testing.assert_allclose(difference, relaxed)
+                np.testing.assert_allclose(spin_summed, transition + transition.T)
+                self.assertEqual(gradient.jk_energies_per_atom, native_jk)
+
+    @unittest.skipUnless(find_spec("pyscf"), "PySCF is required for the native gradient wrapper")
+    def test_checked_cphf_view_keeps_the_pcm_gradient_mixin(self):
+        class NativeGradient:
+            def grad_elec(self, *, with_solvent=False):
+                return cphf.solve(None, None, None, with_solvent, max_cycle=42, tol=1e-10)[0]
+
+        class DFGradient(NativeGradient):
+            pass
+
+        class PCMGradient:
+            def grad_elec(self):
+                return 3 + super().grad_elec(with_solvent=True)
+
+        class NativePCMGradient(PCMGradient, DFGradient):
+            pass
+
+        modules = {
+            "gpu4pyscf.grad": SimpleNamespace(tdrks=SimpleNamespace(
+                Gradients=NativeGradient, grad_elec=NativeGradient.grad_elec,
+            )),
+            "gpu4pyscf.scf": SimpleNamespace(cphf=SimpleNamespace()),
+        }
+        with patch.dict("sys.modules", modules), patch(
+            "pyscf_esd.tda_dipole._solve_gradient_response", return_value=(2, None),
+        ) as solve:
+            for original, expected, with_solvent in ((DFGradient(), 2, False), (NativePCMGradient(), 5, True)):
+                with _checked_gradient_cphf(original, np) as checked:
+                    self.assertEqual(checked.grad_elec(), expected)
+                self.assertIs(solve.call_args.args[-1], with_solvent)
+                self.assertEqual(solve.call_args.kwargs, {"max_cycle": 42, "tol": 1e-10})
+            self.assertIsNone(NativeGradient.grad_elec.__globals__["cphf"])
+
+    def test_gradient_cphf_corrects_and_rechecks_the_same_operator(self):
+        energy = np.array([-.3, .5, .9])
+        occupation = np.array([2., 0., 0.])
+        gaps = (energy[1:] - energy[0])[:, None]
+        response = np.array([[.1, -.08], [-.08, .26]])
+        expected = np.array([[.2], [-.5]])
+        rhs = -(expected * gaps + response @ expected)
+        operator = np.eye(2) + response / gaps
+        tolerance = 1e-10
+
+        def correction(apply, normalized_residual, *, tol, lindep, max_cycle):
+            self.assertAlmostEqual(np.linalg.norm(normalized_residual), 1.)
+            self.assertLess(tol, 1.)
+            np.testing.assert_allclose(apply(normalized_residual), (operator - np.eye(2)) @ normalized_residual)
+            return np.linalg.solve(operator, normalized_residual)
+
+        native = SimpleNamespace(solve=lambda *args, **kwargs: (expected + 3e-8, None), krylov=correction)
+        result, _ = _solve_gradient_response(
+            native, np, response.__matmul__, energy, occupation, rhs, max_cycle=42, tol=tolerance,
+        )
+        np.testing.assert_allclose(result, expected, atol=1e-14, rtol=0.)
+        native.krylov = lambda apply, residual, **kwargs: np.zeros_like(residual)
+        with self.assertRaisesRegex(ElectronicConvergenceError, "CPHF residual .* exceeds tolerance"):
+            _solve_gradient_response(
+                native, np, response.__matmul__, energy, occupation, rhs, max_cycle=42, tol=tolerance,
+            )
+
     def test_polarization_matches_explicit_eigenvector_derivative(self):
         rng = np.random.default_rng(714)
         eigenvectors, _ = np.linalg.qr(rng.normal(size=(4, 4)))

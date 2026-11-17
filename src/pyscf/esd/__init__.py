@@ -25,7 +25,7 @@ __all__ = [
 def run(
     mol: Mole, *, xc: str = DEFAULT_SETTINGS.xc, target_index: int = 0, **options,
 ) -> VibronicResult:
-    """Run gas-phase ESD from a built, closed-shell PySCF molecule.
+    """Run ESD from a built, closed-shell PySCF molecule.
 
     Use one named all-electron spherical orbital basis and standard point
     nuclei. The driver uses the molecule's coordinates, basis name and charge,
