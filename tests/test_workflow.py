@@ -187,11 +187,22 @@ class FirstRunTests(unittest.TestCase):
         self.assertEqual(result.model_used, "ah_ht")
         self.mock_anharmonic.prepare_anharmonic.assert_not_called()
 
-    def test_anharmonic_thermal_tail_is_not_treated_as_qualified(self):
+    def test_automatic_thermal_anharmonicity_checks_population_and_dipole_coverage(self):
         self.anharmonic.diagnostics = {"status": "corrected"}
-        with self.assertRaisesRegex(WorkflowIncomplete, "thermal partition tail"):
-            run_vibronic(("H", "H"), self.geometry, temperature_kelvin=700)
-        self.anharmonic.spectrum.assert_not_called()
+        self.anharmonic.spectrum.side_effect = lambda **options: spectrum(
+            transition_dipole_au=self.electronic.transition_dipole_au, **options,
+        )
+        with self.assertRaisesRegex(WorkflowIncomplete, "vibrational ceiling") as caught:
+            run_vibronic(("H", "H"), self.geometry, process="absorption", temperature_kelvin=450, max_quanta=0)
+        self.assertIn("absorption", caught.exception.partial_spectra)
+        result = run_vibronic(("H", "H"), self.geometry, temperature_kelvin=450)
+        self.assertEqual(result.model_used, "anharmonic_ht")
+        self.assertEqual(set(result.spectra), {"absorption", "emission"})
+        for process in result.spectra:
+            attempts = result.diagnostics["basis_attempts"][process]
+            self.assertGreater(attempts[-1]["initial_max_quanta"], 0)
+            self.assertGreaterEqual(attempts[-1]["initial_population_coverage"], .995)
+            self.assertGreaterEqual(attempts[-1]["final_dipole_strength_coverage"], .995)
 
     def test_inadequate_budget_retains_diagnostics(self):
         with self.assertRaisesRegex(WorkflowIncomplete, "overlap budget") as caught:

@@ -54,6 +54,59 @@ def _surfaces(omega0, omega1, ground, excited, *, displacement=0.0):
 
 
 class AutomaticAnharmonicTests(unittest.TestCase):
+    def test_harmonic_rank_tail_counts_all_omitted_states(self):
+        from pyscf_esd.automatic_anharmonic import _harmonic_log_rank_tail
+
+        omega = np.array([.004, .002, .003])
+        k_thermal = .002
+        reference = .001
+        index = np.arange(40)
+        energies = np.sort((index[:, None, None] * omega[0] + index[None, :, None] * omega[1]
+                            + index[None, None, :] * omega[2]).ravel())
+        expected = np.exp((reference - energies[9:]) / k_thermal).sum()
+        np.testing.assert_allclose(np.exp(_harmonic_log_rank_tail(omega, 9, k_thermal, reference)),
+                                   expected, rtol=2e-10)
+
+    @unittest.skipUnless(find_spec("scipy"), "variational selection uses SciPy")
+    def test_thermal_vci_retains_soft_mode_energy_ranks_for_each_direction(self):
+        from pyscf_esd.harmonic import _KB_HARTREE_PER_K
+
+        w0, w1 = np.array([.0035, .0095]), np.array([.0041, .0102])
+        temperature = 298.
+        k_thermal = _KB_HARTREE_PER_K * temperature
+
+        def ground(x):
+            return .5 * w0 @ x**2 + 8e-6 * x[0]**4
+
+        def excited(x):
+            return .5 * w1 @ x**2 + 4e-6 * x[0]**3 + 7e-6 * x[0]**4
+
+        prepared = prepare_anharmonic(_surfaces(w0, w1, ground, excited))
+        self.assertEqual(prepared.diagnostics["status"], "corrected")
+        for direction, omega, cubic, quartic in (
+            ("absorption", w0, 0., 8e-6), ("emission", w1, 4e-6, 7e-6),
+        ):
+            with self.subTest(direction=direction):
+                result = prepared.spectrum(process=direction, temperature_kelvin=temperature,
+                                           initial_max_quanta=1, final_max_quanta=2)
+                labels, rows = np.unique(result.initial_quanta, axis=0, return_index=True)
+                np.testing.assert_array_equal(labels, [[0, 0], [1, 0], [2, 0]])
+                x = np.linspace(-8, 8, 161)[1:-1]
+                window = .5 + .5 * np.cos(np.pi * np.clip(abs(x) - 3.5, 0, 1))
+                potential = .5 * omega[0] * x**2 + window * (cubic * x**3 + quartic * x**4)
+                levels = solve_dvr(x, potential, boundary="dirichlet", n_levels=3,
+                                   kinetic_coefficient=omega[0]).all_energies_hartree
+                weights = np.exp(-(levels - levels[0]) / k_thermal)
+                ratio = result.population[rows] / result.population[rows[0]]
+                np.testing.assert_allclose(ratio, weights[:3], rtol=.002)
+                reference_coverage = weights[:3].sum() / weights.sum() * -np.expm1(-omega[1] / k_thermal)
+                self.assertGreater(result.initial_population_coverage, .995)
+                self.assertLessEqual(result.initial_population_coverage, reference_coverage + 1e-8)
+                partition = prepared.diagnostics["spectrum"][direction]["thermal_partition"]
+                self.assertEqual(partition["method"], "windowed_vci_minmax_bound")
+                self.assertAlmostEqual(partition["omitted_population_upper_bound"],
+                                       1 - result.initial_population_coverage)
+
     @unittest.skipUnless(find_spec("scipy"), "the direct one-mode solver interpolates on SciPy")
     def test_morse_tail_extends_only_the_unconfined_edge(self):
         omega = np.array([0.004])

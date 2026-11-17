@@ -408,13 +408,6 @@ def _run_vibronic_model(
                     diagnostics,
                 )
             if status == "corrected":
-                if temperature_kelvin > 0:
-                    raise WorkflowIncomplete(
-                        "The anharmonic thermal partition tail is not independently bounded. "
-                        "Use 0 K or request harmonic AH explicitly",
-                        diagnostics,
-                    )
-
                 def solver(**options):
                     try:
                         return anharmonic.spectrum(**options)

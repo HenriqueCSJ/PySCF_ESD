@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from functools import lru_cache
-from heapq import nsmallest
+from heapq import heappop, heappush, nsmallest
 from itertools import combinations, product
 from math import comb
 from numbers import Integral
@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING, Protocol
 import numpy as np
 from numpy.typing import NDArray
 
+from .anharmonic import _degeneracy_tolerance
 from .cpu import ElectronicConvergenceError, ReferenceStabilityUnresolvedError, UnstableReferenceError
 from .harmonic import HarmonicSpectrum, _KB_HARTREE_PER_K, _fc_overlaps, _fock_states
 from .pyscf_adapter import AdiabaticHessianParameters
@@ -81,6 +82,8 @@ class _VibrationalStates:
     labels: _StateList
     energies_hartree: _Real
     eigenvectors: _Real
+    assignment_overlaps_squared: _Real | None = None
+    population: _Real | None = None
 
 
 @dataclass(frozen=True)
@@ -151,7 +154,8 @@ class AutomaticAnharmonic:
                 derivatives = model.rotation @ derivatives
 
         initial_cutoff = int(initial_max_quanta) if temperature_kelvin else 0
-        initial, initial_checks = _local_states(initial_surface, initial_cutoff, "initial")
+        thermal_energy = _KB_HARTREE_PER_K * temperature_kelvin
+        initial, initial_checks = _local_states(initial_surface, initial_cutoff, "initial", thermal_energy=thermal_energy)
         final, final_checks = _local_states(final_surface, int(final_max_quanta), "final")
         basis_order = int(initial.harmonic_basis[-1].sum()) + int(derivatives is not None)
         modes = initial_surface.omega.size
@@ -170,9 +174,10 @@ class AutomaticAnharmonic:
             (source[..., axis].T @ overlaps) @ final.eigenvectors for axis in range(3)
         ], axis=-1)
         strengths = np.sum(amplitudes**2, axis=-1)
-        populations = _populations(
-            initial.energies_hartree, initial.labels, initial_surface.omega, temperature_kelvin,
-        )
+        populations = initial.population
+        if populations is None:
+            populations = np.zeros(len(initial.labels))
+            populations[0] = 1.0
         total_strength = float(populations @ np.sum(source**2, axis=(0, 2)))
         coverage = float(populations @ strengths.sum(axis=1) / total_strength) if total_strength else None
 
@@ -188,7 +193,7 @@ class AutomaticAnharmonic:
             "initial_vci": initial_checks,
             "final_vci": final_checks,
             "overlap_count": overlap_count,
-            "partition_tail": "harmonic estimate" if temperature_kelvin else None,
+            "thermal_partition": initial_checks.get("thermal_partition"),
         }
         return HarmonicSpectrum(
             photon_energy_hartree=photon_energies[i, f],
@@ -497,7 +502,7 @@ def _projected_powers(order, inner_radius, outer_radius):
     return {power: (vectors * (window * points**power)) @ vectors.T for power in (1, 2, 3, 4)}
 
 
-def _vci_states(surface, cutoff, padding, inner_radius, outer_radius):
+def _vci_states(surface, cutoff, padding, inner_radius, outer_radius, *, thermal_order=False):
     from scipy.optimize import linear_sum_assignment
 
     order = cutoff + padding
@@ -519,16 +524,27 @@ def _vci_states(surface, cutoff, padding, inner_radius, outer_radius):
                 block *= powers[exponent][np.ix_(active_quanta, active_quanta)]
             hamiltonian[np.ix_(indices, indices)] += block
     energies, eigenvectors = np.linalg.eigh(hamiltonian)
-    # Ground state is the minimum variational level. Assign excited states
-    # jointly to avoid duplicate quantum labels in a strongly mixed manifold.
-    _, assigned_excited = linear_sum_assignment(eigenvectors[1:retained, 1:]**2, maximize=True)
-    columns = np.r_[0, assigned_excited + 1]
+    # The thermal trace requires a complete lowest-energy prefix. Assignment
+    # to oscillator labels describes those levels and does not select them.
+    if thermal_order:
+        limit = energies[retained - 1] + _degeneracy_tolerance(energies)
+        retained = int(np.searchsorted(energies, limit, side="right"))
+        columns = np.arange(retained)
+        _, assigned = linear_sum_assignment(eigenvectors[1:, 1:retained].T**2, maximize=True)
+        label_rows = np.r_[0, assigned + 1]
+    else:
+        _, assigned = linear_sum_assignment(eigenvectors[1:retained, 1:]**2, maximize=True)
+        columns = np.r_[0, assigned + 1]
+        label_rows = np.arange(retained)
     assigned_vectors = eigenvectors[:, columns]
-    phase = np.where(assigned_vectors[np.arange(retained), np.arange(retained)] < 0, -1, 1)
-    return _VibrationalStates(basis, basis[:retained], energies[columns], assigned_vectors * phase)
+    assignment = assigned_vectors[label_rows, np.arange(retained)]
+    phase = np.where(assignment < 0, -1, 1)
+    return _VibrationalStates(basis, basis[label_rows], energies[columns], assigned_vectors * phase, assignment**2)
 
 
 def _compare_states(first, second):
+    if len(first.energies_hartree) != len(second.energies_hartree):
+        return np.inf, 0.0
     differences = abs(first.energies_hartree - second.energies_hartree)
     retained = len(first.harmonic_basis)
     common = second.eigenvectors[:retained]
@@ -545,42 +561,65 @@ def _compare_states(first, second):
     return float(np.max(differences)), float(np.min(squared))
 
 
-def _local_states(surface, cutoff, label):
+def _local_states(surface, cutoff, label, *, thermal_energy=0.0):
     modes = surface.omega.size
     retained = comb(modes + cutoff, modes)
     if retained > _MAX_VCI_STATES:
         raise AnharmonicUnavailableError(f"the {label} state range exceeds the bounded VCI basis")
     if not surface.terms:
         basis = _fock_states(modes, cutoff)
-        return _VibrationalStates(basis, basis, basis @ surface.omega, np.eye(retained)), {
-            "basis_count": retained, "harmonic": True,
-        }
+        energies = basis @ surface.omega
+        population = None
+        report = {"basis_count": retained, "harmonic": True}
+        if thermal_energy:
+            with np.errstate(over="ignore", under="ignore"):
+                log_inverse_partition = np.log(-np.expm1(-surface.omega / thermal_energy)).sum()
+                population = np.exp(log_inverse_partition - energies / thermal_energy)
+            report["thermal_partition"] = {"method": "exact_harmonic_partition",
+                                           "omitted_population_upper_bound": max(0., 1. - float(population.sum()))}
+        return _VibrationalStates(basis, basis, energies, np.eye(retained), population=population), report
     min_padding = 4 if comb(modes + cutoff + 4, modes) <= _MAX_VCI_STATES else 3
     if comb(modes + cutoff + min_padding, modes) > _MAX_VCI_STATES:
         raise AnharmonicUnavailableError(f"the {label} state range leaves insufficient room for a VCI basis check")
-    previous = _vci_states(surface, cutoff, min_padding - 1, 3.5, 4.5)
+    thermal_order = bool(thermal_energy)
+    previous = _vci_states(surface, cutoff, min_padding - 1, 3.5, 4.5, thermal_order=thermal_order)
     for padding in range(min_padding, _MAX_VCI_PADDING + 1):
         if comb(modes + cutoff + padding, modes) > _MAX_VCI_STATES:
             break
-        result = _vci_states(surface, cutoff, padding, 3.5, 4.5)
+        result = _vci_states(surface, cutoff, padding, 3.5, 4.5, thermal_order=thermal_order)
         energy_error, state_overlap = _compare_states(previous, result)
+        thermal_basis_error = _thermal_distribution_error(previous, result, thermal_energy)
         previous = result
-        if energy_error <= _LEVEL_TOLERANCE and state_overlap >= _MIN_STATE_OVERLAP_SQUARED:
+        if (energy_error <= _LEVEL_TOLERANCE and state_overlap >= _MIN_STATE_OVERLAP_SQUARED
+                and thermal_basis_error <= 1 - _MIN_STATE_OVERLAP_SQUARED):
             # Check whether the spectrum is sensitive to how the local model
             # is joined to its confining harmonic tails.
-            alternative = _vci_states(surface, cutoff, padding, 3.2, 4.2)
+            alternative = _vci_states(surface, cutoff, padding, 3.2, 4.2, thermal_order=thermal_order)
             tail_error, tail_overlap = _compare_states(result, alternative)
-            if tail_error > _LEVEL_TOLERANCE or tail_overlap < _MIN_STATE_OVERLAP_SQUARED:
+            thermal_tail_error = _thermal_distribution_error(result, alternative, thermal_energy)
+            if (tail_error > _LEVEL_TOLERANCE or tail_overlap < _MIN_STATE_OVERLAP_SQUARED
+                    or thermal_tail_error > 1 - _MIN_STATE_OVERLAP_SQUARED):
                 raise AnharmonicUnavailableError(f"the {label} VCI levels depend on unsampled potential tails")
-            return result, {
+            report = {
                 "basis_count": len(result.harmonic_basis),
                 "states_retained": len(result.labels), "max_basis_shift_hartree": energy_error,
                 "min_basis_state_overlap_squared": state_overlap, "max_tail_shift_hartree": tail_error,
                 "min_tail_state_overlap_squared": tail_overlap,
-                "min_assignment_overlap_squared": float(np.min(
-                    np.diag(result.eigenvectors[:len(result.labels)])**2
-                )),
+                "min_assignment_overlap_squared": float(result.assignment_overlaps_squared.min()),
             }
+            if thermal_energy:
+                population, thermal_report = _bounded_thermal_populations(
+                    surface, result, alternative, thermal_energy,
+                )
+                result = _VibrationalStates(
+                    result.harmonic_basis, result.labels, result.energies_hartree, result.eigenvectors,
+                    result.assignment_overlaps_squared, population,
+                )
+                report["thermal_partition"] = {
+                    **thermal_report, "basis_population_l1_change": thermal_basis_error,
+                    "alternate_taper_population_l1_change": thermal_tail_error,
+                }
+            return result, report
     raise AnharmonicUnavailableError(f"the {label} VCI states did not converge within the bounded basis")
 
 
@@ -604,17 +643,77 @@ def _dipole_source(basis, states, omega, dipole, derivatives):
     return source
 
 
-def _populations(energies, labels, omega, temperature):
-    """Replace the retained terms of a harmonic partition with modeled energies."""
-    thermal_energy = _KB_HARTREE_PER_K * temperature
-    if not thermal_energy:
-        populations = np.zeros(len(labels))
-        populations[0] = 1.0
-        return populations
-    harmonic_excitations = labels @ omega
-    excitations = energies - energies[0]
+def _relative_boltzmann(energies, thermal_energy):
     with np.errstate(over="ignore", under="ignore"):
-        log_inverse_partition = np.log(-np.expm1(-omega / thermal_energy)).sum()
-        harmonic_weights = np.exp(log_inverse_partition - harmonic_excitations / thermal_energy)
-        weights = np.exp(log_inverse_partition - excitations / thermal_energy)
-    return weights / (max(0.0, 1.0 - harmonic_weights.sum()) + weights.sum())
+        return np.exp(-(energies - energies[0]) / thermal_energy)
+
+
+def _thermal_distribution_error(first, second, thermal_energy):
+    if not thermal_energy:
+        return 0.0
+    if len(first.energies_hartree) != len(second.energies_hartree):
+        return np.inf
+    left = _relative_boltzmann(first.energies_hartree, thermal_energy)
+    right = _relative_boltzmann(second.energies_hartree, thermal_energy)
+    return float(np.linalg.norm(left / left.sum() - right / right.sum(), ord=1))
+
+
+def _negative_window_bound(surface, inner_radius, outer_radius):
+    """Bound the most negative correction for the windowed local potential."""
+    radii = np.linspace(inner_radius, outer_radius, 33)
+    weights = 0.5 + 0.5 * np.cos(np.linspace(0.0, np.pi, len(radii)))
+    # On each interval the taper decreases and the absolute power increases.
+    powers = {
+        p: max(inner_radius**p, float(np.max(weights[:-1] * radii[1:]**p)))
+        for p in (1, 2, 3, 4)
+    }
+    return sum(
+        abs(term.coefficient_hartree) * float(np.prod([powers[p] for p in term.powers]))
+        for term in surface.terms if term.coefficient_hartree < 0 or any(p % 2 for p in term.powers)
+    )
+
+
+def _harmonic_log_rank_tail(frequencies, retained, thermal_energy, reference):
+    """Sum the tail of the energy-ranked harmonic partition in log space."""
+    omega = np.sort(frequencies)
+    # Represent quanta by a nondecreasing sequence of mode indices. Unpopped
+    # nodes partition all omitted states into disjoint harmonic subtrees.
+    frontier = [(0.0, 0)]
+    for _ in range(retained):
+        energy, first_mode = heappop(frontier)
+        for mode in range(first_mode, len(omega)):
+            heappush(frontier, (energy + omega[mode], mode))
+    energies, first_modes = zip(*frontier, strict=True)
+    with np.errstate(divide="ignore", over="ignore", under="ignore"):
+        log_mode_partitions = -np.log(-np.expm1(-omega / thermal_energy))
+        log_suffix_partitions = np.cumsum(log_mode_partitions[::-1])[::-1]
+        terms = (reference - np.asarray(energies)) / thermal_energy + log_suffix_partitions[list(first_modes)]
+        return float(np.logaddexp.reduce(terms))
+
+
+def _bounded_thermal_populations(surface, states, alternative, thermal_energy):
+    """Min–max tail bound for the tapered operator and converged Ritz prefix."""
+    omitted = []
+    envelopes = []
+    for model, inner, outer in ((states, 3.5, 4.5), (alternative, 3.2, 4.2)):
+        bound = _negative_window_bound(surface, inner, outer)
+        energies = model.energies_hartree
+        # If V >= -B, each ordered eigenvalue is at least its harmonic
+        # counterpart minus B, on the same harmonic zero-point reference.
+        log_tail = _harmonic_log_rank_tail(surface.omega, len(energies), thermal_energy, energies[0] + bound)
+        log_retained = np.log(_relative_boltzmann(energies, thermal_energy).sum())
+        log_coverage = log_retained - np.logaddexp(log_retained, log_tail)
+        omitted.append(float(-np.expm1(log_coverage)))
+        envelopes.append(bound)
+    weights = _relative_boltzmann(states.energies_hartree, thermal_energy)
+    worst_tail = max(omitted)
+    population = (1. - worst_tail) * weights / weights.sum()
+    return population, {
+        "method": "windowed_vci_minmax_bound",
+        "scope": "tapered local Hamiltonians with numerically converged retained levels",
+        "states_retained": len(weights),
+        "omitted_population_upper_bound": worst_tail,
+        "potential_negative_bound_hartree": envelopes[0],
+        "alternate_taper_negative_bound_hartree": envelopes[1],
+        "normalization": "upper_partition_bound",
+    }

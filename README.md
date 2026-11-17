@@ -109,7 +109,7 @@ For GPU AH use a compatible global hybrid LDA/GGA such as PBE0. The analytic rou
 <summary><strong>Prepared inputs and anharmonicity</strong></summary>
 
 - The [Python API](src/pyscf_esd/__init__.py) accepts prepared harmonic surfaces, supports periodic DVR with harmonic spectators at finite temperature, and exposes oscillator strengths and radiative properties.
-- Automatic local anharmonic corrections qualify at 0 K. A periodic rotor at finite temperature uses supplied phase-consistent torsional inputs and the [separable rotor example](examples/assemble_separable_rotor.py).
+- Automatic local anharmonic spectra support positive temperatures when the thermal partition and transition coverage qualify. See [thermal anharmonic spectra](docs/using-methods.md#finite-temperature-anharmonicity). For periodic rotations use supplied phase-consistent torsional inputs and the [separable rotor example](examples/assemble_separable_rotor.py).
 - The [CF₃NO replay](examples/replay_cf3no_thermal.py) defaults to the retained PBE0/TDA model with one rotor and 11 spectators. SF-TDA is an explicit `--method sf-tda` alternative with Matplotlib for plotting. Both routes require the retained calculation archive, which is separate from this repository. The PBE0 comparison is a nuclear-model diagnostic with a restricted-reference instability.
 - Prepared isolated DF-RKS/TDA roots use the same [analytic excited-state curvature](src/pyscf_esd/molecular_tda_hessian.py) and [analytic transition-dipole response](src/pyscf_esd/tda_dipole.py) in vacuum or equilibrium C-PCM.
 
@@ -208,6 +208,8 @@ The [numerical output guide](docs/numerical-results.md) shows how to extract the
 The first [unrestricted DFT and phosphorescence APIs](docs/phosphorescence.md) accept a converged high-spin UKS reference for analytic triplet derivatives and prepared spin–orbit matrices for electronic phosphorescence rates. The guide specifies the input conventions, the three triplet sublevels, and the remaining steps for vibronic phosphorescence.
 
 ## Methods paper
+
+The methods paper documents the earlier 0 K qualification policy for the automatic anharmonic route. The [finite-temperature method guide](docs/using-methods.md#finite-temperature-anharmonicity) describes the current workflow.
 
 The [complete article (PDF)](docs/paper/pyscf-esd.pdf) includes the abstract, introduction, methods, results and discussion, and conclusions. It presents nine molecular structures, a quantitative benchmark table, and the eight selected spectra within the results that discuss them. The [main LaTeX source](docs/paper/main.tex) includes the [electronic response](docs/paper/electronic.tex), [nuclear methods](docs/paper/nuclear.tex), and [benchmark table](docs/paper/benchmark-table.tex).
 

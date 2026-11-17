@@ -28,7 +28,7 @@ pyscf-esd molecule.xyz --model ah --temperature 298 --sigma 33.972872 --output a
 pyscf-esd molecule.xyz --model vg --process absorption --state 2 --sigma 0 --output vg.esd
 ```
 
-- **`auto`** starts from the two relaxed minima and screens direct electronic cuts. It retains AH when the cuts qualify as harmonic and can apply local anharmonic corrections at 0 K. If a correction is required at positive temperature or the sampled potential exceeds the supported model, the run reports why it could not complete. Request `ah` for a harmonic finite-temperature calculation.
+- **`auto`** starts from the two relaxed minima and screens direct electronic cuts. It retains AH when the cuts qualify as harmonic and applies the qualified local anharmonic model when corrections are needed. The [finite-temperature checks](#finite-temperature-anharmonicity) determine whether the requested temperature is covered. If the sampled potential or vibrational budget is insufficient, the run reports why it is incomplete. Request `ah` to choose the harmonic model explicitly.
 - **`ah`** uses separate curvatures at the two minima and maps their normal coordinates through the Duschinsky matrix. The linear HT dipole term interferes with the constant-dipole Franck–Condon (FC) term. The CPU DFT route uses analytic gradients and ground-state curvature. It obtains excited-state curvature and HT by fitting displaced gradients and signed dipoles and checking the fits at independent points. The pure-HF control can use conventional RHF–CIS analytic derivatives when the dense response fits memory.
 - **`vg`** optimizes the ground state and uses its curvature and the vertical excited-state gradient to define two displaced harmonic surfaces of equal curvature. The CLI uses a constant dipole.
 
@@ -198,6 +198,21 @@ def prepared_spectra(mol0, mol1, h0, curv1, e0, e_ref1, g0, g_ref1, dipole):
 ```
 
 The label should match the electronic method actually used. Use the signed length-gauge dipole and its derivative in the S₀ Cartesian frame and gauge. `result.spectra["absorption"]` and `result.spectra["emission"]` contain sticks. Omit `dipole_derivatives_au` for FC only. To control Duschinsky mixing, [`harmonic_spectrum`](../src/pyscf_esd/harmonic.py) accepts `rotation=None` for an identity transform while keeping the other inputs. Pair the modes consistently for such a control. [`thermal_harmonic_spectrum`](../src/pyscf_esd/thermal_separable.py) computes a broadened all-quanta FC/HT profile. For these low-level harmonic calls use the signed final-minus-initial 0–0 gap and the dipole data in the initial-state normal coordinates. The signed gap for emission is negative. Use [the line-property API](../src/pyscf_esd/spectral_properties.py) for oscillator strengths and photon emission rates from sticks.
+
+## Finite-temperature anharmonicity
+
+```bash
+pyscf-esd molecule.xyz --model auto --temperature 298 --process both --output thermal-auto.esd
+```
+
+In Python, use `esd.run(mol, model="auto", temperature_kelvin=298)`. Thermal absorption uses the initial vibrational populations on S₀. Thermal emission uses the corresponding populations on the emitting surface. Populating levels above the vibrational ground state opens hot bands and can shift the spectral envelope. Finite-temperature anharmonic vibronic spectra can also be calculated with other methods, including thermofield wavepacket dynamics. [Finite-temperature anharmonic vibronic spectra](https://doi.org/10.1063/5.0187823)
+
+- **One-mode direct DVR.** The solver sums the Boltzmann weights of all eigenvalues on the sampled grid. It checks the partition against grid refinement and an independently enlarged domain and requires the thermal population to be confined below the walls of the sampled initial well. A shallow well can qualify at 0 K and fail at higher temperature.
+- **Local VCI.** The solver takes the lowest variational energies in order and independently assigns harmonic labels. The initial quanta budget sets how many energy ranks to include. Soft-mode labels can carry more quanta than that cutoff. The fitted potential uses tapered cubic and quartic corrections with harmonic confinement outside the fitted region. An operator lower bound limits the omitted Boltzmann weight. The result uses conservative normalization and checks that retained levels and their relative populations are stable under basis enlargement and an alternate taper. The bound concerns the tapered model and numerically converged retained levels.
+
+Read `diagnostics.anharmonic.spectrum.<direction>.thermal_partition` in `diagnostics.json` for partition evidence. The automatic workflow also checks initial population coverage and final dipole-strength closure. It increases the requested vibrational range subject to `--max-quanta` and `--max-overlaps` and reports incomplete coverage when necessary. The checks add nuclear calculations and, for direct DVR domain enlargement, may sample more energies and dipoles. They use no displaced electronic derivative estimates.
+
+Large-amplitude periodic motion, multiple wells, and dissociating surfaces require appropriate nuclear models. For periodic torsion with harmonic spectators at finite temperature, use the prepared rotor below.
 
 ## Prepared anharmonic models
 

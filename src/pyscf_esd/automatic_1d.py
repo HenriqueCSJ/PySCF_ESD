@@ -6,10 +6,10 @@ import numpy as np
 
 from .anharmonic_dvr import solve_dvr
 from .automatic_anharmonic import (
-    AnharmonicUnavailableError, _ElectronicSurfaces, _LEVEL_TOLERANCE, _populations,
+    AnharmonicUnavailableError, _ElectronicSurfaces, _LEVEL_TOLERANCE,
 )
 from .cpu import ElectronicConvergenceError, ReferenceStabilityUnresolvedError, UnstableReferenceError
-from .harmonic import HarmonicSpectrum
+from .harmonic import HarmonicSpectrum, _KB_HARTREE_PER_K
 from .state_tracking import StateTrackingError
 
 
@@ -21,6 +21,24 @@ _ENERGY_RTOL = 0.0015
 _DIPOLE_RTOL = 0.002
 _BOUNDARY_POPULATION = 1e-4
 _STRENGTH_TOLERANCE = 1e-4
+_THERMAL_TOLERANCE = 1e-6
+
+
+def _thermal_weights(energies, thermal_energy):
+    excitations = energies - energies[0]
+    if thermal_energy == 0:
+        return (excitations == 0).astype(float)
+    with np.errstate(over="ignore", under="ignore"):
+        return np.exp(-excitations / thermal_energy)
+
+
+def _thermal_changes(partition, previous):
+    trace, populations = partition
+    previous_trace, previous_populations = previous
+    return (
+        abs(trace - previous_trace) / trace,
+        float(np.max(abs(populations - previous_populations))),
+    )
 
 
 class DirectOneMode:
@@ -168,7 +186,7 @@ class DirectOneMode:
 
         grid = np.linspace(*bounds, grid_size + 2)[1:-1]
         samples = fit(grid)
-        energies, wavefunctions = [], []
+        energies, wavefunctions, full_energies = [], [], []
         for index, count in enumerate(counts):
             result = solve_dvr(grid, samples[:, index], boundary="dirichlet", n_levels=count)
             vectors = result.coefficients.copy()
@@ -179,7 +197,26 @@ class DirectOneMode:
             vectors *= np.where(np.sum(anchor * vectors, axis=0) < 0, -1.0, 1.0)
             energies.append(result.energies_hartree)
             wavefunctions.append(vectors)
-        return energies, wavefunctions, samples[:, 2:]
+            full_energies.append(result.all_energies_hartree)
+        return energies, wavefunctions, samples[:, 2:], full_energies
+
+    def _check_thermal_well(self, fit, bounds, initial_surface):
+        from scipy.interpolate import PPoly
+
+        potential = PPoly(fit.c[:, :, initial_surface], fit.x)
+        roots = potential.derivative().roots(discontinuity=False, extrapolate=False)
+        stationary = np.sort(roots[np.isfinite(roots)])
+        center = self.centers[initial_surface]
+        paths = (
+            np.r_[center, stationary[stationary < center][::-1], bounds[0]],
+            np.r_[center, stationary[stationary > center], bounds[1]],
+        )
+        for path in paths:
+            values = potential(path)
+            if np.max(np.maximum.accumulate(values) - values) > 2 * _ENERGY_ATOL:
+                raise AnharmonicUnavailableError(
+                    "the sampled initial surface does not support a single-well thermal DVR partition"
+                )
 
     def spectrum(self, *, process, temperature, initial_cutoff, final_cutoff, max_overlaps):
         attempt = {
@@ -224,6 +261,7 @@ class DirectOneMode:
 
     def _spectrum(self, process, temperature, initial_cutoff, final_cutoff, max_overlaps, domain_attempts):
         initial_surface, final_surface = (0, 1) if process == "absorption" else (1, 0)
+        thermal_energy = _KB_HARTREE_PER_K * temperature
         retained = [int(initial_cutoff) + 1 if temperature else 1, int(final_cutoff) + 1]
         if max(retained) > _MAX_LEVELS or retained[0] * retained[1] > max_overlaps:
             raise AnharmonicUnavailableError("the requested one-mode levels exceed the DVR or max_overlaps budget")
@@ -236,7 +274,12 @@ class DirectOneMode:
         previous_spectrum = self.diagnostics.get("spectrum", {}).get(process)
         if previous_spectrum is not None:
             lower, upper = previous_spectrum["domain_sqrt_electron_mass_bohr"]
+            previous_thermal = previous_spectrum.get("thermal_partition")
+            if temperature and previous_thermal is not None:
+                lower, upper = previous_thermal["comparison_domain_sqrt_electron_mass_bohr"]
             bounds = (min(bounds[0], lower), max(bounds[1], upper))
+        thermal_baseline = None
+        thermal_record = None
         for _ in range(_MAX_DOMAIN_ATTEMPTS):
             record = {"attempted_domain_sqrt_electron_mass_bohr": list(bounds)}
             domain_attempts.append(record)
@@ -247,15 +290,27 @@ class DirectOneMode:
                 raise
             record["sampled_domain_sqrt_electron_mass_bohr"] = list(grid_bounds)
             wall = fit(np.asarray(grid_bounds))[:, :2]
+            if temperature:
+                try:
+                    self._check_thermal_well(fit, grid_bounds, initial_surface)
+                except AnharmonicUnavailableError as error:
+                    record.update(status="thermal_well_incomplete", reason=str(error))
+                    raise
             previous = None
+            partition = None
             for grid_size in (111, 223, 447):
-                energies, vectors, dipole = self._solve(fit, grid_bounds, counts, grid_size)
+                energies, vectors, dipole, full_energies = self._solve(fit, grid_bounds, counts, grid_size)
                 start, end = vectors[initial_surface], vectors[final_surface]
                 amplitudes = np.stack([start.T @ (dipole[:, k, None] * end) for k in range(3)], axis=-1)
                 strengths = np.sum(amplitudes**2, axis=-1)
                 required_strength = np.sum(start**2 * np.sum(dipole**2, axis=1)[:, None], axis=0)
+                if temperature:
+                    initial_energies = full_energies[initial_surface]
+                    weights = _thermal_weights(initial_energies, thermal_energy)
+                    trace = float(weights.sum())
+                    partition = trace, weights[:retained[0]] / trace
                 if previous is not None:
-                    previous_energies, previous_strengths = previous
+                    previous_energies, previous_strengths, previous_partition = previous
                     energy_error = max(float(np.max(abs(a - b))) for a, b in zip(energies, previous_energies))
                     strength_error = float(np.max(
                         np.sum(abs(strengths - previous_strengths), axis=1) / np.maximum(required_strength, 1e-25)
@@ -264,12 +319,28 @@ class DirectOneMode:
                         grid_size=grid_size, max_grid_energy_shift_hartree=energy_error,
                         max_grid_strength_error_fraction=strength_error,
                     )
-                    if energy_error <= _LEVEL_TOLERANCE and strength_error <= _STRENGTH_TOLERANCE:
+                    thermal_grid_converged = True
+                    if partition is not None:
+                        grid_trace_error, grid_population_error = _thermal_changes(partition, previous_partition)
+                        thermal_record = {
+                            "model": "sampled_single_well_dvr",
+                            "scope": "initial surface on the sampled domain",
+                            "tolerance": _THERMAL_TOLERANCE,
+                            "partition_function": trace,
+                            "eigenvalues_in_trace": grid_size,
+                            "grid_relative_partition_change": grid_trace_error,
+                            "grid_max_retained_population_change": grid_population_error,
+                        }
+                        record["thermal_partition"] = thermal_record
+                        thermal_grid_converged = max(grid_trace_error, grid_population_error) <= _THERMAL_TOLERANCE
+                    if (energy_error <= _LEVEL_TOLERANCE and strength_error <= _STRENGTH_TOLERANCE
+                            and thermal_grid_converged):
                         break
-                previous = (energies, strengths)
+                previous = (energies, strengths, partition)
             else:
                 record["status"] = "grid_incomplete"
-                raise AnharmonicUnavailableError("the one-mode DVR energy or intensity grid has not converged")
+                quantity = "energy, intensity or thermal trace" if temperature else "energy or intensity"
+                raise AnharmonicUnavailableError(f"the one-mode DVR {quantity} grid has not converged")
             probabilities = self._boundary_probabilities(vectors, grid_bounds, grid_size)
             margins = wall - np.array([e[-1] for e in energies])
             record.update(
@@ -278,21 +349,66 @@ class DirectOneMode:
                 wall_margin_hartree_by_edge_and_surface=margins.tolist(),
             )
             failed = (probabilities > _BOUNDARY_POPULATION) | (margins <= 0)
+            confinement_margins = margins
+            if thermal_record is not None:
+                initial_walls = wall[:, initial_surface]
+                weakest_wall = int(np.argmin(initial_walls))
+                above_wall_fraction = float(weights[initial_energies >= initial_walls[weakest_wall]].sum() / trace)
+                thermal_margins = initial_walls - initial_energies[0] - thermal_energy * (-np.log(_THERMAL_TOLERANCE))
+                thermal_record.update(
+                    wall_excitation_hartree_by_edge=(initial_walls - initial_energies[0]).tolist(),
+                    thermal_wall_margin_hartree_by_edge=thermal_margins.tolist(),
+                    probability_at_or_above_lowest_wall=above_wall_fraction,
+                )
+                if above_wall_fraction > _THERMAL_TOLERANCE:
+                    thermal_margins[weakest_wall] = min(0.0, thermal_margins[weakest_wall])
+                failed[:, initial_surface] |= thermal_margins <= 0
+                confinement_margins = margins.copy()
+                confinement_margins[:, initial_surface] = np.minimum(margins[:, initial_surface], thermal_margins)
             if not np.any(failed):
-                record["status"] = "confined"
-                break
-            record["status"] = "extension_required"
-            next_bounds = self._extend_bounds(bounds, failed, probabilities, margins)
-            if next_bounds == bounds:
-                record["status"] = "short_distance_limit"
-                raise AnharmonicUnavailableError("the direct one-mode levels reach the short-distance domain limit")
+                if thermal_record is None:
+                    record["status"] = "confined"
+                    break
+                if thermal_baseline is not None:
+                    comparison_bounds, previous_partition = thermal_baseline
+                    domain_trace_error, domain_population_error = _thermal_changes(partition, previous_partition)
+                    thermal_record.update(
+                        comparison_domain_sqrt_electron_mass_bohr=list(comparison_bounds),
+                        domain_relative_partition_change=domain_trace_error,
+                        domain_max_retained_population_change=domain_population_error,
+                    )
+                    if max(domain_trace_error, domain_population_error) <= _THERMAL_TOLERANCE:
+                        record["status"] = "confined"
+                        break
+                advance = 1.5 / np.sqrt(self.frequencies[initial_surface])
+                next_bounds = self._outward_bounds((bounds[0] - advance, bounds[1] + advance))
+                if max(bounds[0] - next_bounds[0], next_bounds[1] - bounds[1]) < 0.5 * advance:
+                    record["status"] = "thermal_domain_limit"
+                    raise AnharmonicUnavailableError(
+                        "the one-mode thermal partition requires an independently enlarged sampled domain"
+                    )
+                record["status"] = "thermal_domain_extension_required"
+                thermal_baseline = (grid_bounds, partition)
+            else:
+                record["status"] = "extension_required"
+                next_bounds = self._extend_bounds(bounds, failed, probabilities, confinement_margins)
+                if next_bounds == bounds:
+                    record["status"] = "short_distance_limit"
+                    if temperature:
+                        raise AnharmonicUnavailableError(
+                            "the direct one-mode levels or thermal trace reach the short-distance domain limit"
+                        )
+                    raise AnharmonicUnavailableError("the direct one-mode levels reach the short-distance domain limit")
+                thermal_baseline = None
             bounds = next_bounds
         else:
+            if temperature:
+                raise AnharmonicUnavailableError("the direct one-mode thermal partition is not confined and converged "
+                                                 "on the sampled domains")
             raise AnharmonicUnavailableError("the direct one-mode levels are not confined by the sampled domain")
 
-        omega = self.frequencies[[initial_surface]]
         initial_labels = np.arange(retained[0], dtype=np.intp)[:, None]
-        populations = _populations(energies[initial_surface], initial_labels, omega, temperature)
+        populations = partition[1] if partition is not None else np.ones(1)
         denominator = float(populations @ required_strength)
         coverage = min(1.0, float(populations @ strengths.sum(axis=1) / denominator)) if denominator else None
         photons = (reference[final_surface] - reference[initial_surface]
@@ -302,7 +418,7 @@ class DirectOneMode:
         i, j = np.nonzero((photons > 0) & (populations[:, None] > 0))
         order = np.argsort(photons[i, j], kind="stable")
         i, j = i[order], j[order]
-        self.diagnostics.setdefault("spectrum", {})[process] = {
+        report = {
             "domain_sqrt_electron_mass_bohr": list(grid_bounds),
             "grid_size": grid_size,
             "max_grid_energy_shift_hartree": energy_error,
@@ -310,8 +426,11 @@ class DirectOneMode:
             "max_boundary_probability": float(probabilities.max()),
             "minimum_wall_margin_hartree": float(margins.min()),
             "interpolation": self.diagnostics["interpolation"],
-            "partition_tail": "harmonic estimate" if temperature else None,
+            "partition_tail": None,
         }
+        if thermal_record is not None:
+            report["thermal_partition"] = thermal_record
+        self.diagnostics.setdefault("spectrum", {})[process] = report
         return HarmonicSpectrum(
             photon_energy_hartree=photons[i, j], initial_quanta=initial_labels[i], final_quanta=j[:, None],
             population=populations[i], dipole_strength_au2=strengths[i, j],
