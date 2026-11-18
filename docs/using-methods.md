@@ -1,8 +1,8 @@
 # Choosing and running a method
 
-Install the package with the `.[workflow]` extra as shown in the [quick start](../README.md#quick-start). The same installation provides the CLI and the Python entry points below.
+Install the package with the `.[workflow]` extra as shown in the [quick start](https://github.com/HenriqueCSJ/PySCF_ESD/blob/main/README.md#quick-start). The same installation provides the CLI and the Python entry points below.
 
-In a PySCF script, use `from pyscf import esd`. The [`esd.run(mol, ...)` example](../README.md#use-as-a-pyscf-module) starts from an existing `pyscf.gto.Mole`. Core APIs such as `esd.run_prepared_ah` and `esd.solve_dvr` are also available through the module.
+In a PySCF script, use `from pyscf import esd`. The [`esd.run(mol, ...)` example](https://github.com/HenriqueCSJ/PySCF_ESD/blob/main/README.md#use-as-a-pyscf-module) starts from an existing `pyscf.gto.Mole`. Core APIs such as `esd.run_prepared_ah` and `esd.solve_dvr` are also available through the module.
 
 | What you want to run | Entry point |
 | --- | --- |
@@ -34,7 +34,7 @@ pyscf-esd molecule.xyz --model vg --process absorption --state 2 --sigma 0 --out
 
 Supply a closed-shell XYZ in ångström and a new output directory. Defaults are PBE0/def2-TZVPD, the first singlet root at the relaxed ground geometry, both spectra and 0 K. `--state` is one-based. Python `target_index` is zero-based. `--sigma` is a Gaussian standard deviation in cm⁻¹. The second command uses 80 cm⁻¹ FWHM via `FWHM = 2 sqrt(2 ln 2) σ`. Zero gives sticks only.
 
-Use `--xc`, `--basis` and `--charge` for the electronic model, `--reference-checks all` to test the reference at every electronic point, and repeat `--fallback-xc XC` for ordered alternatives in the supported recovery path. `--max-quanta` and `--max-overlaps` bound the vibrational calculation. Run `pyscf-esd --help` for the full list. Check `diagnostics.json` for state assignments, the derivative route and per-spectrum completion. See the [output files](../README.md#output) for spectra and observables.
+Use `--xc`, `--basis` and `--charge` for the electronic model, `--reference-checks all` to test the reference at every electronic point, and repeat `--fallback-xc XC` for ordered alternatives in the supported recovery path. `--max-quanta` and `--max-overlaps` bound the vibrational calculation. Run `pyscf-esd --help` for the full list. Check `diagnostics.json` for state assignments, the derivative route and per-spectrum completion. See the [output files](https://github.com/HenriqueCSJ/PySCF_ESD/blob/main/README.md#output) for spectra and observables.
 
 ## Choosing the level of theory
 
@@ -47,7 +47,7 @@ pyscf-esd molecule.xyz --xc b3lyp --basis def2-SVP --model ah --output b3lyp-ah.
 
 Use PySCF [functional aliases](https://pyscf.org/user/dft.html#predefined-xc-functionals-and-functional-aliases) such as `pbe`, `pbe0`, `b3lyp` and `cam-b3lyp` with [PySCF basis names](https://pyscf.org/user/gto.html#basis-set). The automatic DFT workflow requires a closed-shell all-electron reference and LDA or GGA XC with the required LibXC derivatives. This includes compatible global and range-separated hybrids. Meta-GGA, nonlocal correlation, empirical dispersion and ECPs are outside this workflow. The prepared analytic C-PCM derivatives require a global hybrid.
 
-Use `--charge 2` for a closed-shell dication or `--state 2` for the second singlet at the relaxed ground geometry. In Python, `Settings` from [`pyscf_esd.cpu`](../src/pyscf_esd/cpu.py) exposes `nstates`, `grid_level`, and the SCF and response tolerances. Pass it to [`run_vibronic`](../src/pyscf_esd/workflow.py) with coordinates in bohr.
+Use `--charge 2` for a closed-shell dication or `--state 2` for the second singlet at the relaxed ground geometry. In Python, `Settings` from [`pyscf_esd.cpu`](https://github.com/HenriqueCSJ/PySCF_ESD/blob/main/src/pyscf_esd/cpu.py) exposes `nstates`, `grid_level`, and the SCF and response tolerances. Pass it to [`run_vibronic`](https://github.com/HenriqueCSJ/PySCF_ESD/blob/main/src/pyscf_esd/workflow.py) with coordinates in bohr.
 
 ```python
 from pyscf_esd import run_vibronic
@@ -99,7 +99,7 @@ def numerical_vg(symbols, coordinates_bohr):
     )
 ```
 
-Inspect `result.normal_dipole_derivatives_au` and `result.excited_hessian_hartree_per_bohr2`. `result.spectrum(process="absorption")` includes available HT by default. Set `include_ht=False` on the spectrum call for a constant dipole. The spectrum retains the VG curvatures. The optional excited-state Hessian describes S₁ at the **supplied S₀ geometry**. AH uses S₁ curvature at the relaxed S₁ geometry. See the [CPU workflow API](../src/pyscf_esd/cpu_workflow.py).
+Inspect `result.normal_dipole_derivatives_au` and `result.excited_hessian_hartree_per_bohr2`. `result.spectrum(process="absorption")` includes available HT by default. Set `include_ht=False` on the spectrum call for a constant dipole. The spectrum retains the VG curvatures. The optional excited-state Hessian describes S₁ at the **supplied S₀ geometry**. AH uses S₁ curvature at the relaxed S₁ geometry. See the [CPU workflow API](https://github.com/HenriqueCSJ/PySCF_ESD/blob/main/src/pyscf_esd/cpu_workflow.py).
 
 ## GPU VG, AH and automatic screening
 
@@ -133,7 +133,7 @@ def gpu_vg(symbols, coordinates_bohr):
     return model.spectrum(process="emission")
 ```
 
-See the [GPU backend](../src/pyscf_esd/gpu.py) and the [water benchmark driver](../examples/validate_water_gpu.py).
+See the [GPU backend](https://github.com/HenriqueCSJ/PySCF_ESD/blob/main/src/pyscf_esd/gpu.py) and the [water benchmark driver](https://github.com/HenriqueCSJ/PySCF_ESD/blob/main/examples/validate_water_gpu.py).
 
 ## Spin-flip TDA on GPU
 
@@ -156,11 +156,11 @@ def sf_transition(sf, lower, upper):
 
 The SF eigenvalues are offsets from the auxiliary triplet. Physical root `i` has total energy `float(uks.e_tot) + float(sf.e[i])`. The gradients already differentiate those totals and have units Hartree/bohr. Optical labels are **one-based**, and gradient indices are **zero-based**. Choose the root count within the response dimension.
 
-The [SF API](../src/pyscf_esd/gpu_spin_flip.py) operates at a supplied geometry. For a path, the [prepared tracking API](../src/pyscf_esd/prepared_state_tracking.py) propagates state assignments and phases from caller-supplied signed state overlaps. A complete SF run from XYZ through relaxed minima, curvatures and spectra is a user-assembled workflow.
+The [SF API](https://github.com/HenriqueCSJ/PySCF_ESD/blob/main/src/pyscf_esd/gpu_spin_flip.py) operates at a supplied geometry. For a path, the [prepared tracking API](https://github.com/HenriqueCSJ/PySCF_ESD/blob/main/src/pyscf_esd/prepared_state_tracking.py) propagates state assignments and phases from caller-supplied signed state overlaps. A complete SF run from XYZ through relaxed minima, curvatures and spectra is a user-assembled workflow.
 
 ## Analytic derivatives for prepared C-PCM roots
 
-Supply solved, isolated singlet roots of GPU4PySCF restricted LR-TDA in vacuum or equilibrium linear-response C-PCM, a real global hybrid LDA/GGA functional and a shared RKS and CPHF grid with `small_rho_cutoff = 0`. The analytic Hessian requires a spherical all-electron basis, Coulomb-metric DF for J and K, fourth XC derivatives and a matching SWIG cavity when solvent is present. See the [installation note](../README.md#default-and-options) for `PYSCF_ESD_LIBXC_LXC` and the [integration test setup](../tests/test_molecular_tda_hessian.py) for the grid and cavity. Solve through at least one root above the target or provide the complete occupied–virtual spectrum.
+Supply solved, isolated singlet roots of GPU4PySCF restricted LR-TDA in vacuum or equilibrium linear-response C-PCM, a real global hybrid LDA/GGA functional and a shared RKS and CPHF grid with `small_rho_cutoff = 0`. The analytic Hessian requires a spherical all-electron basis, Coulomb-metric DF for J and K, fourth XC derivatives and a matching SWIG cavity when solvent is present. See the [installation note](https://github.com/HenriqueCSJ/PySCF_ESD/blob/main/README.md#default-and-options) for `PYSCF_ESD_LIBXC_LXC` and the [integration test setup](https://github.com/HenriqueCSJ/PySCF_ESD/blob/main/tests/test_molecular_tda_hessian.py) for the grid and cavity. Solve through at least one root above the target or provide the complete occupied–virtual spectrum.
 
 ```python
 from pyscf_esd import analytic_molecular_tda_hessian, analytic_tda_transition_dipole
@@ -171,11 +171,11 @@ def endpoint_response(td_at_s0, root_at_s0, td_at_s1, root_at_s1, phase_at_s0):
     return curvature, dipole
 ```
 
-Use zero-based indices for the same tracked excited state at the two geometries. `phase_at_s0` is `+1` or `-1` and acts on both the transition dipole and its derivative. `curvature.hessian` is the **total** excited-state Hessian in Hartree/bohr². Add `curvature.excitation_hartree` and `curvature.excitation_gradient` to the matching RKS reference energy and gradient at the excited geometry. The Cartesian `dipole.derivative` has axes (atom, displacement Cartesian, dipole Cartesian) and units e, the derivative of e·bohr with respect to bohr. See the [Hessian](../src/pyscf_esd/molecular_tda_hessian.py) and [dipole](../src/pyscf_esd/tda_dipole.py) APIs.
+Use zero-based indices for the same tracked excited state at the two geometries. `phase_at_s0` is `+1` or `-1` and acts on both the transition dipole and its derivative. `curvature.hessian` is the **total** excited-state Hessian in Hartree/bohr². Add `curvature.excitation_hartree` and `curvature.excitation_gradient` to the matching RKS reference energy and gradient at the excited geometry. The Cartesian `dipole.derivative` has axes (atom, displacement Cartesian, dipole Cartesian) and units e, the derivative of e·bohr with respect to bohr. See the [Hessian](https://github.com/HenriqueCSJ/PySCF_ESD/blob/main/src/pyscf_esd/molecular_tda_hessian.py) and [dipole](https://github.com/HenriqueCSJ/PySCF_ESD/blob/main/src/pyscf_esd/tda_dipole.py) APIs.
 
 ## Spectra from prepared electronic data
 
-Give [`adiabatic_hessian`](../src/pyscf_esd/pyscf_adapter.py) two stationary PySCF `Mole` objects with matching atom order, their Hessians in Hartree/bohr², total energies in Hartree on a common reference and total gradients in Hartree/bohr. It constructs the mass-weighted normal modes, the Duschinsky matrix and the harmonic 0–0 energy. Here is how to connect the analytic dipole output above to AH.
+Give [`adiabatic_hessian`](https://github.com/HenriqueCSJ/PySCF_ESD/blob/main/src/pyscf_esd/pyscf_adapter.py) two stationary PySCF `Mole` objects with matching atom order, their Hessians in Hartree/bohr², total energies in Hartree on a common reference and total gradients in Hartree/bohr. It constructs the mass-weighted normal modes, the Duschinsky matrix and the harmonic 0–0 energy. Here is how to connect the analytic dipole output above to AH.
 
 ```python
 import numpy as np
@@ -197,7 +197,7 @@ def prepared_spectra(mol0, mol1, h0, curv1, e0, e_ref1, g0, g_ref1, dipole):
     )
 ```
 
-The label should match the electronic method actually used. Use the signed length-gauge dipole and its derivative in the S₀ Cartesian frame and gauge. `result.spectra["absorption"]` and `result.spectra["emission"]` contain sticks. Omit `dipole_derivatives_au` for FC only. To control Duschinsky mixing, [`harmonic_spectrum`](../src/pyscf_esd/harmonic.py) accepts `rotation=None` for an identity transform while keeping the other inputs. Pair the modes consistently for such a control. [`thermal_harmonic_spectrum`](../src/pyscf_esd/thermal_separable.py) computes a broadened all-quanta FC/HT profile. For these low-level harmonic calls use the signed final-minus-initial 0–0 gap and the dipole data in the initial-state normal coordinates. The signed gap for emission is negative. Use [the line-property API](../src/pyscf_esd/spectral_properties.py) for oscillator strengths and photon emission rates from sticks.
+The label should match the electronic method actually used. Use the signed length-gauge dipole and its derivative in the S₀ Cartesian frame and gauge. `result.spectra["absorption"]` and `result.spectra["emission"]` contain sticks. Omit `dipole_derivatives_au` for FC only. To control Duschinsky mixing, [`harmonic_spectrum`](https://github.com/HenriqueCSJ/PySCF_ESD/blob/main/src/pyscf_esd/harmonic.py) accepts `rotation=None` for an identity transform while keeping the other inputs. Pair the modes consistently for such a control. [`thermal_harmonic_spectrum`](https://github.com/HenriqueCSJ/PySCF_ESD/blob/main/src/pyscf_esd/thermal_separable.py) computes a broadened all-quanta FC/HT profile. For these low-level harmonic calls use the signed final-minus-initial 0–0 gap and the dipole data in the initial-state normal coordinates. The signed gap for emission is negative. Use [the line-property API](https://github.com/HenriqueCSJ/PySCF_ESD/blob/main/src/pyscf_esd/spectral_properties.py) for oscillator strengths and photon emission rates from sticks.
 
 ## Finite-temperature anharmonicity
 
@@ -216,11 +216,11 @@ Large-amplitude periodic motion, multiple wells, and dissociating surfaces requi
 
 ## Prepared anharmonic models
 
-[`solve_dvr`](../src/pyscf_esd/anharmonic_dvr.py) takes a uniform grid and sampled potential in Hartree. Choose a Dirichlet boundary for a mass-weighted inversion cut or a periodic or antiperiodic boundary for an angle in radians. For an angle use the inverse moment of inertia as `kinetic_coefficient`, with inertia in electron-mass·bohr². Use a common energy reference for both potentials. [`anharmonic_spectrum`](../src/pyscf_esd/anharmonic.py) combines the levels with a constant or coordinate-dependent signed dipole and optional harmonic spectators.
+[`solve_dvr`](https://github.com/HenriqueCSJ/PySCF_ESD/blob/main/src/pyscf_esd/anharmonic_dvr.py) takes a uniform grid and sampled potential in Hartree. Choose a Dirichlet boundary for a mass-weighted inversion cut or a periodic or antiperiodic boundary for an angle in radians. For an angle use the inverse moment of inertia as `kinetic_coefficient`, with inertia in electron-mass·bohr². Use a common energy reference for both potentials. [`anharmonic_spectrum`](https://github.com/HenriqueCSJ/PySCF_ESD/blob/main/src/pyscf_esd/anharmonic.py) combines the levels with a constant or coordinate-dependent signed dipole and optional harmonic spectators.
 
 ### Thermal torsion
 
-[`phase_periodic_scan`](../src/pyscf_esd/anharmonic_sampling.py) takes uniform angle samples without a duplicate endpoint. The signed overlaps must link every pair of adjacent states including the link back to the original first point. The two closure signs set the nuclear boundary conditions and the product sign of the dipole over one period. This synthetic example runs with zero electronic calculations.
+[`phase_periodic_scan`](https://github.com/HenriqueCSJ/PySCF_ESD/blob/main/src/pyscf_esd/anharmonic_sampling.py) takes uniform angle samples without a duplicate endpoint. The signed overlaps must link every pair of adjacent states including the link back to the original first point. The two closure signs set the nuclear boundary conditions and the product sign of the dipole over one period. This synthetic example runs with zero electronic calculations.
 
 ```python
 import numpy as np
@@ -245,9 +245,9 @@ absorption = thermal_separable_spectrum(s0, s1, process="absorption", **options)
 emission = thermal_separable_spectrum(s1, s0, process="emission", **options)
 ```
 
-The result provides `wavenumber_cm_inverse` and `photon_weighted_density_per_cm_inverse`. The [thermal solver API](../src/pyscf_esd/thermal_separable.py) describes physical-unit conversion and accepts `spectators`. Put the emitting surface first and reverse the spectator mapping for emission.
+The result provides `wavenumber_cm_inverse` and `photon_weighted_density_per_cm_inverse`. The [thermal solver API](https://github.com/HenriqueCSJ/PySCF_ESD/blob/main/src/pyscf_esd/thermal_separable.py) describes physical-unit conversion and accepts `spectators`. Put the emitting surface first and reverse the spectator mapping for emission.
 
-To assemble a molecular problem, use the [separable rotor assembler](../examples/assemble_separable_rotor.py) with a JSON document containing the three tracked cuts (`ground`, `excited` and `midpoint`), masses in amu, and zero-based `axis_atoms` and `moving_atoms`. For the assembler, each cut **includes** the repeated endpoint. The surface cuts contain absolute energies, sequential signed overlaps, a duplicate-to-first closure overlap and one stationary geometry with its analytic Hessian. The midpoint cut supplies Cartesian dipoles and signed links for each of the two states separately. The assembler documents the exact fields and units. With Matplotlib installed:
+To assemble a molecular problem, use the [separable rotor assembler](https://github.com/HenriqueCSJ/PySCF_ESD/blob/main/examples/assemble_separable_rotor.py) with a JSON document containing the three tracked cuts (`ground`, `excited` and `midpoint`), masses in amu, and zero-based `axis_atoms` and `moving_atoms`. For the assembler, each cut **includes** the repeated endpoint. The surface cuts contain absolute energies, sequential signed overlaps, a duplicate-to-first closure overlap and one stationary geometry with its analytic Hessian. The midpoint cut supplies Cartesian dipoles and signed links for each of the two states separately. The assembler documents the exact fields and units. With Matplotlib installed:
 
 ```bash
 python examples/assemble_separable_rotor.py cuts.json --output rotor-298 \
@@ -256,8 +256,8 @@ python examples/assemble_separable_rotor.py cuts.json --output rotor-298 \
 
 ### Coupled modes and tunneling
 
-[`SineGalerkin2D`](../src/pyscf_esd/anharmonic_plane.py) and [`SineDVR3D`](../src/pyscf_esd/anharmonic_volume.py) accept prepared multi-coordinate potentials. The [formaldehyde driver](../examples/validate_h2co_3d.py) shows the double-well and dipole inputs. [`mix_vibrational_states`](../src/pyscf_esd/vibrational_mixing.py) accepts a symmetric vibrational Hamiltonian in Hartree and signed Cartesian transition dipoles in the same basis. Couplings mix the amplitudes before squaring, retaining intensity borrowing and interference. The [benzene coupling driver](../examples/validate_benzene_spectator_mixing.py) shows how to use prepared cuts.
+[`SineGalerkin2D`](https://github.com/HenriqueCSJ/PySCF_ESD/blob/main/src/pyscf_esd/anharmonic_plane.py) and [`SineDVR3D`](https://github.com/HenriqueCSJ/PySCF_ESD/blob/main/src/pyscf_esd/anharmonic_volume.py) accept prepared multi-coordinate potentials. The [formaldehyde driver](https://github.com/HenriqueCSJ/PySCF_ESD/blob/main/examples/validate_h2co_3d.py) shows the double-well and dipole inputs. [`mix_vibrational_states`](https://github.com/HenriqueCSJ/PySCF_ESD/blob/main/src/pyscf_esd/vibrational_mixing.py) accepts a symmetric vibrational Hamiltonian in Hartree and signed Cartesian transition dipoles in the same basis. Couplings mix the amplitudes before squaring, retaining intensity borrowing and interference. The [benzene coupling driver](https://github.com/HenriqueCSJ/PySCF_ESD/blob/main/examples/validate_benzene_spectator_mixing.py) shows how to use prepared cuts.
 
 ## Replaying a benchmark
 
-The [CF₃NO replay](../examples/replay_cf3no_thermal.py) assembles the retained PBE0/TDA and SF-TDA cases at 298 K and 80 cm⁻¹ FWHM. PBE0/TDA is the replay default and `--method sf-tda` selects spin flip. Run the script with `--help` for its archive and output arguments. The public repository includes the article and selected plots. This replay and some molecule-specific drivers require separate electronic calculation archives. The generic APIs accept your own data, and the [synthetic rotor check](../examples/validate_anharmonic_rotor.py) runs without the archives.
+The [CF₃NO replay](https://github.com/HenriqueCSJ/PySCF_ESD/blob/main/examples/replay_cf3no_thermal.py) assembles the retained PBE0/TDA and SF-TDA cases at 298 K and 80 cm⁻¹ FWHM. PBE0/TDA is the replay default and `--method sf-tda` selects spin flip. Run the script with `--help` for its archive and output arguments. The public repository includes the article and selected plots. This replay and some molecule-specific drivers require separate electronic calculation archives. The generic APIs accept your own data, and the [synthetic rotor check](https://github.com/HenriqueCSJ/PySCF_ESD/blob/main/examples/validate_anharmonic_rotor.py) runs without the archives.

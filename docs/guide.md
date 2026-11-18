@@ -1,6 +1,6 @@
 # Installation and workflow guide
 
-[Project home](../README.md) · [Python API](api.md) · [Methods](methods.md) · [Validation](validation.md)
+[Project home](https://github.com/HenriqueCSJ/PySCF_ESD/blob/main/README.md) · [Python API](api.md) · [Methods](methods.md) · [Validation](validation.md)
 
 ## Install
 
@@ -25,7 +25,7 @@ The command `python -m pyscf_esd` is equivalent to `pyscf-esd` in the active env
 
 ## Input and model
 
-Use one XYZ frame with an atom count, a comment line, and one element symbol and three finite Cartesian coordinates per atom, in ångström. The CLI preserves atom order. Pass the molecular charge explicitly when needed. The automatic singlet workflow requires an even electron count and a closed-shell all-electron reference. See the [README water input](../README.md#quick-start) and the [separate open-shell and phosphorescence APIs](phosphorescence.md).
+Use one XYZ frame with an atom count, a comment line, and one element symbol and three finite Cartesian coordinates per atom, in ångström. The CLI preserves atom order. Pass the molecular charge explicitly when needed. The automatic singlet workflow requires an even electron count and a closed-shell all-electron reference. See the [README water input](https://github.com/HenriqueCSJ/PySCF_ESD/blob/main/README.md#quick-start) and the [separate open-shell and phosphorescence APIs](phosphorescence.md).
 
 ```sh
 # Default automatic calculation, both directions at 0 K

@@ -1,0 +1,34 @@
+site_name: PySCF ESD
+site_description: Vibronic absorption, fluorescence and phosphorescence with PySCF
+repo_url: https://github.com/HenriqueCSJ/PySCF_ESD
+repo_name: HenriqueCSJ/PySCF_ESD
+edit_uri: edit/main/docs/
+theme:
+  name: readthedocs
+  collapse_navigation: false
+nav:
+  - Home: index.md
+  - Getting started: guide.md
+  - Fluorescence and absorption:
+    - Choose a calculation: using-methods.md
+    - Numerical outputs: numerical-results.md
+  - Phosphorescence and open shell: phosphorescence.md
+  - Python API: api.md
+  - Theory and validation:
+    - Methods: methods.md
+    - Validation: validation.md
+    - Spectra gallery: spectra-gallery.md
+    - CF₃NO and reference stability: mini-paper.md
+    - Methods manuscript (PDF): paper/pyscf-esd.pdf
+validation:
+  links:
+    anchors: warn
+    unrecognized_links: warn
+markdown_extensions:
+  - pymdownx.arithmatex:
+      generic: true
+extra_javascript:
+  - assets/javascripts/mathjax.js
+  - https://cdn.jsdelivr.net/npm/mathjax@3.2.2/es5/tex-mml-chtml.js
+
+use_directory_urls: false

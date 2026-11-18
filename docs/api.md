@@ -1,6 +1,6 @@
 # Python API
 
-[Project home](../README.md) · [Workflow guide](guide.md) · [Methods](methods.md) · [Validation](validation.md)
+[Project home](https://github.com/HenriqueCSJ/PySCF_ESD/blob/main/README.md) · [Workflow guide](guide.md) · [Methods](methods.md) · [Validation](validation.md)
 
 ## Units and input conventions
 

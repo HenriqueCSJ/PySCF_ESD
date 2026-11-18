@@ -1,6 +1,6 @@
 # Methods and implementation
 
-[Project home](../README.md) · [Workflow guide](guide.md) · [Python API](api.md) · [Validation](validation.md)
+[Project home](https://github.com/HenriqueCSJ/PySCF_ESD/blob/main/README.md) · [Workflow guide](guide.md) · [Python API](api.md) · [Validation](validation.md)
 
 ## Electronic reference and state tracking
 
@@ -64,7 +64,7 @@ Use the physical rate prefactors for comparisons to absolute oscillator strength
 
 ## Source map
 
-- [workflow.py](../src/pyscf_esd/workflow.py) selects the model, retries a reference and grows the vibrational basis. [electronic_workflow.py](../src/pyscf_esd/electronic_workflow.py), [cpu.py](../src/pyscf_esd/cpu.py), and [state_tracking.py](../src/pyscf_esd/state_tracking.py) own electronic preparation and phase checks.
-- [cis_hessian.py](../src/pyscf_esd/cis_hessian.py) and [cis_integrals.py](../src/pyscf_esd/cis_integrals.py) implement analytic CIS derivatives. [pyscf_adapter.py](../src/pyscf_esd/pyscf_adapter.py) converts derivatives and aligned geometries to vibrational models. [gpu.py](../src/pyscf_esd/gpu.py) holds the single-point GPU route.
-- [harmonic.py](../src/pyscf_esd/harmonic.py), [automatic_anharmonic.py](../src/pyscf_esd/automatic_anharmonic.py), [automatic_1d.py](../src/pyscf_esd/automatic_1d.py), [anharmonic.py](../src/pyscf_esd/anharmonic.py) and [thermal_separable.py](../src/pyscf_esd/thermal_separable.py) evaluate the corresponding spectral models.
-- [spectral_properties.py](../src/pyscf_esd/spectral_properties.py) and [vibronic_properties.py](../src/pyscf_esd/vibronic_properties.py) interpret strengths and surface parameters. [cli.py](../src/pyscf_esd/cli.py) writes the CSV and JSON outputs.
+- [workflow.py](https://github.com/HenriqueCSJ/PySCF_ESD/blob/main/src/pyscf_esd/workflow.py) selects the model, retries a reference and grows the vibrational basis. [electronic_workflow.py](https://github.com/HenriqueCSJ/PySCF_ESD/blob/main/src/pyscf_esd/electronic_workflow.py), [cpu.py](https://github.com/HenriqueCSJ/PySCF_ESD/blob/main/src/pyscf_esd/cpu.py), and [state_tracking.py](https://github.com/HenriqueCSJ/PySCF_ESD/blob/main/src/pyscf_esd/state_tracking.py) own electronic preparation and phase checks.
+- [cis_hessian.py](https://github.com/HenriqueCSJ/PySCF_ESD/blob/main/src/pyscf_esd/cis_hessian.py) and [cis_integrals.py](https://github.com/HenriqueCSJ/PySCF_ESD/blob/main/src/pyscf_esd/cis_integrals.py) implement analytic CIS derivatives. [pyscf_adapter.py](https://github.com/HenriqueCSJ/PySCF_ESD/blob/main/src/pyscf_esd/pyscf_adapter.py) converts derivatives and aligned geometries to vibrational models. [gpu.py](https://github.com/HenriqueCSJ/PySCF_ESD/blob/main/src/pyscf_esd/gpu.py) holds the single-point GPU route.
+- [harmonic.py](https://github.com/HenriqueCSJ/PySCF_ESD/blob/main/src/pyscf_esd/harmonic.py), [automatic_anharmonic.py](https://github.com/HenriqueCSJ/PySCF_ESD/blob/main/src/pyscf_esd/automatic_anharmonic.py), [automatic_1d.py](https://github.com/HenriqueCSJ/PySCF_ESD/blob/main/src/pyscf_esd/automatic_1d.py), [anharmonic.py](https://github.com/HenriqueCSJ/PySCF_ESD/blob/main/src/pyscf_esd/anharmonic.py) and [thermal_separable.py](https://github.com/HenriqueCSJ/PySCF_ESD/blob/main/src/pyscf_esd/thermal_separable.py) evaluate the corresponding spectral models.
+- [spectral_properties.py](https://github.com/HenriqueCSJ/PySCF_ESD/blob/main/src/pyscf_esd/spectral_properties.py) and [vibronic_properties.py](https://github.com/HenriqueCSJ/PySCF_ESD/blob/main/src/pyscf_esd/vibronic_properties.py) interpret strengths and surface parameters. [cli.py](https://github.com/HenriqueCSJ/PySCF_ESD/blob/main/src/pyscf_esd/cli.py) writes the CSV and JSON outputs.
