@@ -289,7 +289,7 @@ def analytic_molecular_tda_hessian(
             progress("ground_hessian", 1, 1)
 
         solvent_gradients, solvent_hessian = model.solvent_derivatives()
-        if progress is not None and ground_pcm is not None:
+        if progress is not None and getattr(mf, "with_solvent", None) is not None:
             progress("fixed_density_solvent", 1, 1)
         fixed_hessian = model.density_fitting_hessian() + solvent_hessian
         if progress is not None:

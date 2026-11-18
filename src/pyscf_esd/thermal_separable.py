@@ -1,7 +1,7 @@
 """Gaussian-broadened thermal harmonic and separable vibronic spectra."""
 
 from dataclasses import dataclass
-from math import isfinite, log, sqrt
+from math import exp, isfinite, log, pi, sqrt
 from numbers import Integral
 from typing import Literal
 
@@ -22,6 +22,7 @@ from .spectral_properties import HARTREE_TO_WAVENUMBER
 
 _FloatVector = NDArray[np.float64]
 _Process = Literal["absorption", "emission"]
+_FFT_CUTOFF_RELATIVE_TOLERANCE = 1e-8
 
 
 @dataclass(frozen=True)
@@ -70,6 +71,12 @@ class _ConstantQuadratic:
 
 
 @dataclass(frozen=True)
+class _HarmonicSidebands:
+    offset_hartree: _FloatVector
+    strength: _FloatVector
+
+
+@dataclass(frozen=True)
 class _HarmonicCharacteristic:
     """Gaussian evaluation of the squared-overlap thermal generating function."""
 
@@ -81,6 +88,7 @@ class _HarmonicCharacteristic:
     zero_point: float
     dipole: _LinearDipole | None = None
     constant_quadratic: _ConstantQuadratic | None = None
+    sidebands: _HarmonicSidebands | None = None
 
     def _gaussian_moments(self, matrix, half_activity):
         source = half_activity * self.linear
@@ -230,13 +238,23 @@ def _harmonic_characteristic(
             if derivatives is not None:
                 occupation = np.exp(-beta_omega) / partition
         log_activity = np.concatenate((-beta_omega, np.zeros(modes)))
-    dipole_factor = None
+    dipole_factor = sidebands = None
     if derivatives is not None:
         inverse_scale = 1.0 / np.sqrt(2 * omega_i[:, None])
         scaled = derivatives * inverse_scale
-        strength = float(dipole @ dipole + (2 * occupation + 1) @ np.sum(scaled**2, axis=1))
+        mode_strength = np.sum(scaled**2, axis=1)
+        condon_strength = float(dipole @ dipole)
+        strength = float(condon_strength + (2 * occupation + 1) @ mode_strength)
         if not isfinite(strength) or strength <= 0:
             raise ValueError("thermal dipole closure exceeds the numerical range")
+        if same_curvature and not np.any(shift):
+            # Identical undisplaced Hamiltonians preserve the Condon energy.
+            # A linear dipole raises or lowers one initial mode. Rotations
+            # within a degenerate subspace preserve the summed strength.
+            sidebands = _HarmonicSidebands(
+                np.concatenate(([0.0], sign * omega_i, -sign * omega_i)),
+                np.concatenate(([condon_strength], (occupation + 1) * mode_strength, occupation * mode_strength)),
+            )
         # Q_i inserts (z_i + ∂/∂z_i) / sqrt(2ω_i) on the initial Fock index.
         constant = dipole + linear[:modes] @ scaled
         slope = (np.eye(2 * modes)[:modes] + quadratic[:modes]).T @ scaled
@@ -261,7 +279,7 @@ def _harmonic_characteristic(
             float(np.log(cross_denominator).sum()),
         )
     model = _HarmonicCharacteristic(
-        energy, log_activity, linear, quadratic, log_prefactor, zero_point, dipole_factor, factors,
+        energy, log_activity, linear, quadratic, log_prefactor, zero_point, dipole_factor, factors, sidebands,
     )
     log_normalizer = model.log_moment(0.0)
     if not isfinite(log_normalizer) or abs(log_normalizer) > 1e-8:
@@ -375,6 +393,22 @@ def _binned_active_transform(
     return np.fft.rfft(histogram)
 
 
+def _broaden_harmonic_sticks(axis, energy, weight, sigma, dipole_strength):
+    density = np.zeros_like(axis, dtype=float)
+    dipole_density = None if dipole_strength is None else np.zeros_like(axis, dtype=float)
+    normalizer = 1 / (sigma * sqrt(2 * pi))
+    # The Gaussian tails beyond the FFT grid's ten-sigma padding are negligible.
+    lower = np.searchsorted(axis, energy - 10 * sigma)
+    upper = np.searchsorted(axis, energy + 10 * sigma)
+    for i, (first, last) in enumerate(zip(lower, upper, strict=True)):
+        local = slice(first, last)
+        gaussian = normalizer * np.exp(-0.5 * ((axis[local] - energy[i]) / sigma)**2)
+        density[local] += weight[i] * gaussian
+        if dipole_density is not None:
+            dipole_density[local] += dipole_strength[i] * gaussian
+    return density, dipole_density
+
+
 def _smoothed_weighted_bins(
     transform: NDArray[np.complex128],
     frequencies: _FloatVector,
@@ -401,6 +435,20 @@ def _smoothed_weighted_bins(
         + 3 * axis * second
         + third
     ) / HARTREE_TO_WAVENUMBER**3
+
+
+def _cutoff_leakage_bounds(transform, frequencies, axis, step, auxiliary_sigma, exponent):
+    """Estimate upper bounds from the signed measure's Gaussian envelope at zero."""
+    if axis[0] > 0 or axis[-1] < 0:
+        return 0.0, 0.0
+    # For a line at x, the sampled Gaussian fraction across zero is at most
+    # exp(-x² / (2σ²)). Bound |x|^p times that factor with a wider Gaussian:
+    # |x|^p exp(-x² / (4σ²)) peaks at |x| = sqrt(2p) σ.
+    envelope = np.fft.irfft(transform * np.exp(-(frequencies * auxiliary_sigma)**2), n=len(axis))
+    zero_index = np.searchsorted(axis, 0)
+    dipole_bound = max(float(envelope[zero_index]), 0.0) * (2 * sqrt(pi) * auxiliary_sigma / step)
+    energy_factor = (sqrt(2 * exponent) * auxiliary_sigma * exp(-0.5) / HARTREE_TO_WAVENUMBER)**exponent
+    return dipole_bound * energy_factor, dipole_bound
 
 
 def _thermal_settings(process, temperature_kelvin, fwhm_cm_inverse, step_cm_inverse, tail_tolerance, max_grid_points):
@@ -451,12 +499,14 @@ def thermal_separable_spectrum(
     partition and final-state closure are analytical. An energy-domain
     Chernoff bound controls aliasing of the normalized signed dipole measure.
 
-    Multiple active lines are linearly deposited. For a harmonic bath, a narrow auxiliary Gaussian
-    of twice the mesh step isolates the positive-photon part of the spectrum.
-    Its variance is subtracted from the remaining Gaussian broadening.
-    Reduce `step_cm_inverse` to check accuracy, particularly for transitions
-    close to zero photon energy. This method returns a profile without
-    individual line assignments.
+    Multiple active lines are linearly deposited. For a harmonic bath, the
+    positive-photon cutoff uses an auxiliary Gaussian of twice the mesh step.
+    Its variance is subtracted from the remaining Gaussian broadening. The
+    solver raises ValueError if the FFT resolves no positive weight or if
+    estimated cutoff leakage or negative photon-weighted bins exceed 1e-8 of
+    the corresponding positive measure. Exact dark cases can return zero.
+    Reduce `step_cm_inverse` to assess cutoff resolution. This method returns
+    a profile without individual line assignments.
     """
     sign, thermal_energy, sigma, step = _thermal_settings(
         process, temperature_kelvin, fwhm_cm_inverse, step_cm_inverse, tail_tolerance, max_grid_points,
@@ -466,24 +516,30 @@ def thermal_separable_spectrum(
     energy, strength, population, closure = _active_weights(initial, final, dipole, thermal_energy, sign)
     origin = sign * HARTREE_TO_WAVENUMBER * (final.energies_hartree[0] - initial.energies_hartree[0])
     origin += harmonic.zero_point
+    upper_photon_bound = None
+    if sign == -1 and thermal_energy == 0 and energy.size:
+        upper_photon_bound = float(energy.max()) + harmonic.zero_point
     return _thermal_profile(
         energy, strength, harmonic, origin, population, closure, process=process,
         temperature_kelvin=temperature_kelvin, fwhm_cm_inverse=fwhm_cm_inverse, sigma=sigma, step=step,
-        tail_tolerance=tail_tolerance, max_grid_points=max_grid_points,
+        tail_tolerance=tail_tolerance, max_grid_points=max_grid_points, upper_photon_bound=upper_photon_bound,
     )
 
 
 def _thermal_profile(
     energy, strength, harmonic, origin, population, closure, *, process, temperature_kelvin, fwhm_cm_inverse,
-    sigma, step, tail_tolerance, max_grid_points, include_dipole_strength_density=False,
+    sigma, step, tail_tolerance, max_grid_points, include_dipole_strength_density=False, upper_photon_bound=None,
 ):
     auxiliary_sigma = 2 * step
     signed_strength = float(strength.sum())
     exponent = 3 if process == "emission" else 1
     negative_fraction = 0.0
     dipole_transform = None
-    if not harmonic.energy.size or signed_strength == 0:
-        positive = energy > 0
+    no_positive_photons = upper_photon_bound is not None and upper_photon_bound <= 0
+    if harmonic is None or not harmonic.energy.size or signed_strength == 0 or no_positive_photons:
+        positive = (energy > 0) & (strength > 0)
+        if no_positive_photons:
+            positive[:] = False
         energy = energy[positive]
         positive_strength = strength[positive]
         weight = positive_strength * (energy / HARTREE_TO_WAVENUMBER)**exponent
@@ -494,9 +550,10 @@ def _thermal_profile(
             dipole_limits = _finite_tail_limits(energy, positive_strength, tail_tolerance)
             limits = min(limits[0], dipole_limits[0]), max(limits[1], dipole_limits[1])
         axis = _fft_grid(limits, step, sigma, int(max_grid_points))
-        transform = _binned_active_transform(energy, weight, axis[0], step, len(axis))
-        if include_dipole_strength_density:
-            dipole_transform = _binned_active_transform(energy, positive_strength, axis[0], step, len(axis))
+        if harmonic is not None:
+            transform = _binned_active_transform(energy, weight, axis[0], step, len(axis))
+            if include_dipole_strength_density:
+                dipole_transform = _binned_active_transform(energy, positive_strength, axis[0], step, len(axis))
         auxiliary_sigma = 0.0
     else:
         limits = _signed_tail_limits(energy, strength, harmonic, tail_tolerance, auxiliary_sigma)
@@ -506,29 +563,55 @@ def _thermal_profile(
         # A spectator shift can change the sign of a photon energy. Combine
         # signed contributions before applying the positive-energy cutoff.
         transform *= harmonic.transform(frequencies)
+        supported_bins = axis > 0
+        if upper_photon_bound is not None:
+            # Cold emission loses energy to final-state excitation. Beyond
+            # ten auxiliary widths above its upper support, only FFT noise
+            # is significant and multiplication by E³ amplifies that noise.
+            supported_bins &= axis <= upper_photon_bound + 10 * auxiliary_sigma
+        dipole_total = None
         if include_dipole_strength_density:
             # Use the same auxiliary energy resolution and the same positive
             # photon cutoff as the photon-weighted profile.
             smooth = transform * np.exp(-0.5 * (frequencies * auxiliary_sigma)**2)
             dipole_bins = np.maximum(np.fft.irfft(smooth, n=len(axis)), 0)
-            dipole_bins[axis <= 0] = 0
+            dipole_bins[~supported_bins] = 0
+            dipole_total = float(dipole_bins.sum())
             dipole_transform = np.fft.rfft(dipole_bins)
         weight = _smoothed_weighted_bins(transform, frequencies, axis, auxiliary_sigma, exponent)
-        weight[axis <= 0] = 0
+        weight[~supported_bins] = 0
         negative_fraction = -float(weight[weight < 0].sum()) / max(
             float(weight[weight > 0].sum()), np.finfo(float).tiny
         )
         weight = np.maximum(weight, 0)
         total = float(weight.sum())
+        photon_leakage, dipole_leakage = _cutoff_leakage_bounds(
+            transform, frequencies, axis, step, auxiliary_sigma, exponent,
+        )
+        tolerance = _FFT_CUTOFF_RELATIVE_TOLERANCE
+        if (
+            total == 0
+            or negative_fraction > tolerance
+            or photon_leakage > tolerance * total
+            or (dipole_total is not None and dipole_leakage > tolerance * dipole_total)
+        ):
+            raise ValueError(
+                "the thermal FFT cannot resolve the positive photon-energy cutoff at this mesh; "
+                "reduce step_cm_inverse or use assigned transition lines"
+            )
         centroid = None if total == 0 else float(weight @ axis / total)
         transform = np.fft.rfft(weight)
-    frequencies = 2 * np.pi * np.fft.rfftfreq(len(axis), d=step)
-    gaussian = np.exp(-0.5 * frequencies**2 * (sigma**2 - auxiliary_sigma**2))
-    # Convert bin weights to a density per cm⁻¹, preserving integrated strength.
-    density = np.fft.irfft(transform * gaussian, n=len(axis)) / step
-    dipole_density = None if dipole_transform is None else np.maximum(
-        np.fft.irfft(dipole_transform * gaussian, n=len(axis)) / step, 0,
-    )
+    if harmonic is None:
+        dipole_strength = positive_strength if include_dipole_strength_density else None
+        density, dipole_density = _broaden_harmonic_sticks(axis, energy, weight, sigma, dipole_strength)
+    else:
+        frequencies = 2 * np.pi * np.fft.rfftfreq(len(axis), d=step)
+        gaussian = np.exp(-0.5 * frequencies**2 * (sigma**2 - auxiliary_sigma**2))
+        # Convert bin weights to a density per cm⁻¹, preserving integrated strength.
+        density = np.fft.irfft(transform * gaussian, n=len(axis)) / step
+        dipole_density = None if dipole_transform is None else np.maximum(
+            np.fft.irfft(dipole_transform * gaussian, n=len(axis)) / step, 0,
+        )
     return ThermalSeparableSpectrum(
         axis, np.maximum(density, 0), fwhm_cm_inverse, step, temperature_kelvin, process,
         population, closure, signed_strength, total, centroid, origin, tail_tolerance, auxiliary_sigma, negative_fraction,
@@ -562,12 +645,17 @@ def thermal_harmonic_spectrum(
     optional (n_modes, 3) gradient are taken at Q_i=0. Franck–Condon and
     Herzberg–Teller contributions interfere at the amplitude level.
 
-    The characteristic transform and thermal closure include all harmonic
-    states. The energy mesh controls the auxiliary Gaussian cutoff at zero
-    photon energy. The returned profile includes the positive-energy dipole
-    weight E for absorption and E³ for emission, with E in Hartree. Request
-    the separate dipole-strength density for comparisons to experimental
-    spectra reduced by the photon-energy factor before broadening.
+    The thermal closure includes all harmonic states. Equal, undisplaced
+    Hamiltonians permit an exact cutoff on the origin and linear-dipole
+    sidebands, with Gaussian profiles centered at the original stick energies.
+    Otherwise the auxiliary Gaussian cutoff uses the energy mesh
+    and raises ValueError if the FFT resolves no positive weight or if
+    estimated cutoff leakage or negative photon-weighted bins exceed 1e-8 of
+    the corresponding positive measure. Exact dark cases can return zero.
+    The returned profile includes the positive-energy dipole weight E for
+    absorption and E³ for emission, with E in Hartree. Request the separate
+    dipole-strength density for comparisons to experimental spectra reduced
+    by the photon-energy factor before broadening.
     """
     sign, thermal_energy, sigma, step = _thermal_settings(
         process, temperature_kelvin, fwhm_cm_inverse, step_cm_inverse, tail_tolerance, max_grid_points,
@@ -595,9 +683,17 @@ def thermal_harmonic_spectrum(
     strength = float(dipole @ dipole) if harmonic.dipole is None else harmonic.dipole.strength
     if not isfinite(strength):
         raise ValueError("thermal dipole closure exceeds the numerical range")
+    if harmonic.sidebands is None:
+        energy = np.array([origin - harmonic.zero_point])
+        weights = np.array([strength])
+    else:
+        energy = (sign * gap_00_hartree + harmonic.sidebands.offset_hartree) * HARTREE_TO_WAVENUMBER
+        weights = harmonic.sidebands.strength
+        harmonic = None
     return _thermal_profile(
-        np.array([origin - harmonic.zero_point]), np.array([strength]), harmonic, origin, 1.0,
+        energy, weights, harmonic, origin, 1.0,
         1.0 if strength > 0 else None, process=process, temperature_kelvin=temperature_kelvin,
         fwhm_cm_inverse=fwhm_cm_inverse, sigma=sigma, step=step, tail_tolerance=tail_tolerance,
         max_grid_points=max_grid_points, include_dipole_strength_density=include_dipole_strength_density,
+        upper_photon_bound=origin if sign == -1 and thermal_energy == 0 else None,
     )

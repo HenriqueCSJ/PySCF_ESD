@@ -122,7 +122,11 @@ class MolecularTDAHessianTests(unittest.TestCase):
         td.conv_tol, td.nstates = 5e-10, 3
         nocc = mol.nelectron // 2
         td.kernel(x0=cp.eye(nocc * (mol.nao - nocc)))
-        result = analytic_molecular_tda_hessian(td, 0)
+        events = []
+        result = analytic_molecular_tda_hessian(td, 0, progress=lambda *stage: events.append(stage))
+        self.assertEqual(events[:3], [("ground_hessian", 1, 1), ("fixed_density_solvent", 1, 1),
+                                      ("fixed_density_df", 1, 1)])
+        self.assertEqual(events[-1], ("mixed_operator_derivatives", 45, 45))
         grad = td.Gradients()
         grad.cphf_conv_tol, grad.cphf_max_cycle = 1e-10, 150
         with lib.temporary_env(mf.with_solvent, equilibrium_solvation=True):

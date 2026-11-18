@@ -30,6 +30,8 @@ def run(
     Use one named all-electron spherical orbital basis and standard point
     nuclei. The driver uses the molecule's coordinates, basis name and charge,
     and follows the zero-based singlet root at the relaxed ground geometry.
+    Atomic masses come from the Mole, including isotope overrides, unless
+    ``masses_amu`` is supplied explicitly.
     Other keywords are passed to :func:`run_vibronic`.
     """
     if not isinstance(mol, Mole) or not mol._built:
@@ -50,4 +52,6 @@ def run(
         nstates=max(DEFAULT_SETTINGS.nstates, target_index + 2),
     )
     symbols = tuple(mol.atom_pure_symbol(index) for index in range(mol.natm))
+    if options.get("masses_amu") is None:
+        options["masses_amu"] = mol.atom_mass_list(isotope_avg=True)
     return run_vibronic(symbols, mol.atom_coords(unit="Bohr"), settings, target_index=target_index, **options)

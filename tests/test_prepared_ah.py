@@ -58,6 +58,82 @@ class PreparedAHTests(unittest.TestCase):
         self.assertEqual(diagnostics["spectral_status"]["absorption"], "incomplete")
         self.assertIn("absorption", error.exception.partial_spectra)
 
+    def test_prepared_ht_uses_affordable_initial_basis_for_many_modes(self):
+        count = 81
+        frequencies = np.full(count, .012)
+        modes = np.eye(87)[:count].reshape(count, 29, 3)
+        parameters = replace(
+            _prepared_oscillator(), ground_frequencies_hartree=frequencies, excited_frequencies_hartree=frequencies,
+            rotation=np.eye(count), shift_au=np.zeros(count), subspace_singular_values=np.ones(count),
+            ground_cartesian_mode_derivatives_au=modes, excited_cartesian_mode_derivatives_au=modes,
+        )
+        derivatives = np.zeros((count, 3))
+        derivatives[0, 0] = .001
+        result = run_prepared_ah(
+            parameters, [1, 0, 0], electronic_method="equal-curvature HT oscillators",
+            dipole_derivatives_au=derivatives, temperature_kelvin=298.,
+        )
+        for process in ("absorption", "emission"):
+            with self.subTest(process=process):
+                self.assertEqual(result.diagnostics["spectral_status"][process], "complete")
+                attempt, = result.diagnostics["basis_attempts"][process]
+                self.assertEqual((attempt["initial_max_quanta"], attempt["final_max_quanta"]), (0, 1))
+                self.assertGreaterEqual(attempt["initial_population_coverage"], .995)
+                self.assertGreaterEqual(attempt["final_dipole_strength_coverage"], .995)
+                for moment in attempt["positive_photon_moments"].values():
+                    self.assertGreaterEqual(moment["coverage_lower_bound"], .995)
+
+    def test_prepared_fc_can_start_with_one_overlap(self):
+        parameters = replace(_prepared_oscillator(), shift_au=np.zeros(1))
+        result = run_prepared_ah(
+            parameters, [1, 0, 0], electronic_method="equal-curvature FC oscillator",
+            process="absorption", max_overlaps=1,
+        )
+        attempt, = result.diagnostics["basis_attempts"]["absorption"]
+        self.assertEqual((attempt["initial_max_quanta"], attempt["final_max_quanta"]), (0, 0))
+        np.testing.assert_allclose(result.spectra["absorption"].dipole_strength_au2, [1.])
+
+    def test_prepared_fc_trades_final_quanta_for_initial_population_within_budget(self):
+        count = 8
+        frequencies = np.full(count, .006)
+        modes = np.eye(15)[:count].reshape(count, 5, 3)
+        parameters = replace(
+            _prepared_oscillator(), ground_frequencies_hartree=frequencies, excited_frequencies_hartree=frequencies,
+            rotation=np.eye(count), shift_au=np.zeros(count), subspace_singular_values=np.ones(count),
+            ground_cartesian_mode_derivatives_au=modes, excited_cartesian_mode_derivatives_au=modes,
+        )
+        result = run_prepared_ah(
+            parameters, [1, 0, 0], electronic_method="equal-curvature FC oscillators",
+            temperature_kelvin=298., max_overlaps=100,
+        )
+        for process in ("absorption", "emission"):
+            with self.subTest(process=process):
+                first, qualified = result.diagnostics["basis_attempts"][process]
+                self.assertEqual((first["initial_max_quanta"], first["final_max_quanta"]), (0, 2))
+                self.assertLess(first["initial_population_coverage"], .995)
+                self.assertEqual((qualified["initial_max_quanta"], qualified["final_max_quanta"]), (1, 1))
+                self.assertEqual(result.diagnostics["spectral_status"][process], "complete")
+
+    def test_budget_fallback_checks_both_directions_of_the_harmonic_basis(self):
+        omega = .01
+        base = replace(_prepared_oscillator(), gap_00_hartree=.005,
+                       ground_frequencies_hartree=np.array([omega]), excited_frequencies_hartree=np.array([omega]))
+        cases = (
+            ("absorption", .2, .02, .95, 4, None, (0, 3)),
+            ("emission", .02, .08, .995, 27, [[.04, 0, 0]], (7, 2)),
+        )
+        for process, displacement, thermal_ratio, coverage, budget, slopes, cutoffs in cases:
+            with self.subTest(process=process):
+                parameters = replace(base, shift_au=np.array([np.sqrt(2 * displacement / omega)]))
+                result = run_prepared_ah(
+                    parameters, [1, 0, 0], electronic_method="displaced oscillator", process=process,
+                    temperature_kelvin=-omega / (_KB_HARTREE_PER_K * np.log(thermal_ratio)),
+                    coverage=coverage, max_overlaps=budget, dipole_derivatives_au=slopes,
+                )
+                final = result.diagnostics["basis_attempts"][process][-1]
+                self.assertEqual((final["initial_max_quanta"], final["final_max_quanta"]), cutoffs)
+                self.assertEqual(result.diagnostics["spectral_status"][process], "complete")
+
     def test_absorption_strength_requires_m1_beyond_dipole_closure(self):
         omega, gap, displacement_factor = .01, 1e-6, .3
         parameters = replace(
@@ -85,15 +161,27 @@ class PreparedAHTests(unittest.TestCase):
             electronic_method="equal-curvature HT oscillator", process="emission",
             dipole_derivatives_au=[[0, 0, slope]], temperature_kelvin=-omega / (_KB_HARTREE_PER_K * np.log(ratio)),
         )
-        with self.assertRaisesRegex(WorkflowIncomplete, "overlap budget") as error:
-            run_prepared_ah(parameters, [0, 0, 0], max_overlaps=6, **options)
-        first = error.exception.diagnostics["basis_attempts"]["emission"][0]
+        solve_spectrum = parameters.spectrum
+        with patch.object(AdiabaticHessianParameters, "spectrum", autospec=True,
+                          side_effect=lambda _, **options: solve_spectrum(**options)) as solve:
+            with self.assertRaisesRegex(WorkflowIncomplete, "overlap budget") as error:
+                run_prepared_ah(parameters, [0, 0, 0], max_overlaps=6, **options)
+        tried = [(call.kwargs["initial_max_quanta"], call.kwargs["final_max_quanta"]) for call in solve.call_args_list]
+        self.assertEqual(len(tried), len(set(tried)))
+        self.assertNotIn((2, 1), tried)
+        attempts = error.exception.diagnostics["basis_attempts"]["emission"]
+        first, best, last = attempts[0], attempts[1], attempts[-1]
         self.assertGreaterEqual(first["initial_population_coverage"], .995)
         self.assertGreaterEqual(first["final_dipole_strength_coverage"], .995)
         self.assertEqual(first["positive_photon_moments"]["M3"]["status"], "incomplete")
         self.assertEqual(first["positive_photon_moments"]["M4"]["status"], "incomplete")
         rate_cold = first["positive_photon_moments"]["M3"]["retained"] * _EINSTEIN_A_FACTOR
         self.assertLess(rate_cold, 1.1e-7)
+        self.assertLess(last["final_dipole_strength_coverage"], .005)
+        partial = error.exception.partial_spectra["emission"]
+        self.assertEqual(partial.final_dipole_strength_coverage, best["final_dipole_strength_coverage"])
+        self.assertEqual(partial.positive_photon_moments[4].coverage_lower_bound,
+                         best["positive_photon_moments"]["M4"]["coverage_lower_bound"])
 
         result = run_prepared_ah(parameters, [0, 0, 0], **options)
         final = result.diagnostics["basis_attempts"]["emission"][-1]

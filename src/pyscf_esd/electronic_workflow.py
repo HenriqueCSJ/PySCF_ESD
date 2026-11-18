@@ -16,7 +16,7 @@ from .cpu import (
     UnstableReferenceError,
     _checked_array, _scf_residual, _solve_reference, build_molecule, check_restricted_reference, solve_point,
 )
-from .pyscf_adapter import AdiabaticHessianParameters, adiabatic_hessian
+from .pyscf_adapter import AdiabaticHessianParameters, _validated_masses, adiabatic_hessian
 from .state_tracking import StateTrackingError, orbital_overlap_blocks, track_state
 from .vibronic_properties import electronic_relaxation_properties, harmonic_model_properties
 
@@ -151,7 +151,10 @@ class _ElectronicSession:
     quadrature_grid_response = False
     ground_hessian_route = "analytic_pyscf_rks"
 
-    def __init__(self, symbols: Sequence[str], coordinates: ArrayLike, settings: Settings):
+    def __init__(
+        self, symbols: Sequence[str], coordinates: ArrayLike, settings: Settings, *,
+        masses_amu: ArrayLike | None = None,
+    ):
         from pyscf import dft
         from pyscf.scf.dispersion import parse_dft
 
@@ -161,7 +164,9 @@ class _ElectronicSession:
         if len(self.symbols) < 2:
             raise ValueError("vibronic spectroscopy requires a molecule with at least two atoms")
         molecule = build_molecule(self.symbols, coordinates, settings)
-        self.masses = molecule.atom_mass_list(isotope_avg=True)
+        if masses_amu is None:
+            masses_amu = molecule.atom_mass_list(isotope_avg=True)
+        self.masses = _validated_masses(masses_amu, len(self.symbols)).copy()
         self.initial_coordinates = np.asarray(molecule.atom_coords(), dtype=float)
         occupied = molecule.nelectron // 2
         self.root_dimension = occupied * (molecule.nao_nr() - occupied)
@@ -574,7 +579,6 @@ def _check_ht_zero_point(session, center, modes, frequencies, derivatives) -> di
     checked_modes = eligible[np.argsort(-change_norms[eligible], kind="stable")].tolist()
     diagnostics = {
         "status": "passed",
-        "ground_mode_index": checked_modes[0],
         "checked_ground_mode_indices": checked_modes,
         "electronic_gap_hartree": gap,
     }
@@ -595,8 +599,8 @@ def _check_ht_zero_point(session, center, modes, frequencies, derivatives) -> di
                 f"neighboring root gap {gap:.3g} Hartree). A coordinate-dependent dipole or "
                 "coupled electronic states are needed to qualify the spectrum and radiative rate."
             )
-        if mode == checked_modes[0]:
-            diagnostics.update(max_dipole_error_au=error, dipole_error_limit_au=limit)
+        if mode == checked_modes[0] or error > diagnostics["max_dipole_error_au"]:
+            diagnostics.update(ground_mode_index=mode, max_dipole_error_au=error, dipole_error_limit_au=limit)
     return diagnostics
 
 
@@ -785,16 +789,19 @@ def _prepare_ground(session: _ElectronicSession):
     )
 
 
-def optimize_ground(symbols: Sequence[str], coordinates_bohr: ArrayLike, settings: Settings) -> _Real:
+def optimize_ground(
+    symbols: Sequence[str], coordinates_bohr: ArrayLike, settings: Settings, *,
+    masses_amu: ArrayLike | None = None,
+) -> _Real:
     """Find and verify a stable closed-shell S0 local minimum from a starting geometry."""
-    session = _ElectronicSession(symbols, coordinates_bohr, settings)
+    session = _ElectronicSession(symbols, coordinates_bohr, settings, masses_amu=masses_amu)
     minima, _ = _prepare_ground(session)
     return minima[0][0].coordinates.copy()
 
 
 def prepare_electronic(
     symbols: Sequence[str], coordinates_bohr: ArrayLike, settings: Settings, *, target_index: int,
-    direct_dipole: bool = False,
+    direct_dipole: bool = False, masses_amu: ArrayLike | None = None,
 ) -> ElectronicPreparation:
     """Relax S0 and the singlet chosen by zero-based root index at the S0 minimum.
 
@@ -807,7 +814,7 @@ def prepare_electronic(
     Set ``direct_dipole`` when the nuclear solver uses the sampled dipole field.
     """
     return _prepare_electronic(
-        _ElectronicSession(symbols, coordinates_bohr, settings),
+        _ElectronicSession(symbols, coordinates_bohr, settings, masses_amu=masses_amu),
         target_index=target_index, direct_dipole=direct_dipole,
     )
 
@@ -839,6 +846,7 @@ def _prepare_electronic(session, *, target_index, direct_dipole):
             ground_energy_hartree=ground.energy, excited_energy_hartree=excited.energy,
             ground_gradient=ground.gradient, excited_gradient=excited.total_gradient(),
             stationary_tolerance=_STATIONARY_TOLERANCE, subspace_tolerance=_SUBSPACE_LOSS_LIMIT,
+            masses_amu=session.masses,
         )
     except ValueError as error:
         raise ElectronicConvergenceError(f"the two stationary minima do not qualify for an AH model: {error}") from error

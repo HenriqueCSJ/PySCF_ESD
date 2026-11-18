@@ -37,7 +37,7 @@ class CpuWorkflowTests(unittest.TestCase):
             mock.start()
             self.addCleanup(mock.stop)
 
-    def solve_point(self, symbols, coordinates, settings, *, previous=None):
+    def solve_point(self, symbols, coordinates, settings, *, previous=None, _vg_target_index=None):
         self.calls.append(coordinates.copy())
         displacement = (coordinates - self.geometry).ravel()
         displaced = np.any(displacement)
@@ -60,7 +60,8 @@ class CpuWorkflowTests(unittest.TestCase):
             return 2 * displacement.reshape(2, 3)
 
         return SimpleNamespace(
-            mol=object(), reference_stability=lambda: (True, True), ground_gradient=lambda: np.zeros((2, 3)),
+            mol=object(), settings=settings, reference_stability=lambda: (True, True),
+            ground_gradient=lambda: np.zeros((2, 3)),
             ground_hessian=lambda: np.zeros((2, 2, 3, 3)), excited_gradient=gradient,
             mo_coeff=np.eye(4), nocc=1, amplitudes=amplitudes, excitation_energies_hartree=energies,
             transition_dipoles_au=dipoles, ground_energy_hartree=-1.0, attempts=(),
@@ -171,8 +172,8 @@ class CpuWorkflowTests(unittest.TestCase):
             result = self.run_workflow(folder, **options)
             original_solve = self.solve_point
 
-            def reversed_center(symbols, coordinates, settings, *, previous=None):
-                point = original_solve(symbols, coordinates, settings, previous=previous)
+            def reversed_center(symbols, coordinates, settings, **options):
+                point = original_solve(symbols, coordinates, settings, **options)
                 np.testing.assert_array_equal(coordinates, self.geometry)
                 point.amplitudes[0] *= -1
                 point.transition_dipoles_au[0] *= -1
@@ -182,6 +183,19 @@ class CpuWorkflowTests(unittest.TestCase):
                 resumed = self.run_workflow(folder, **options)
             np.testing.assert_array_equal(resumed.dipole_jacobian_au_per_bohr,
                                           -result.dipole_jacobian_au_per_bohr)
+
+
+@unittest.skipUnless(find_spec("pyscf") and find_spec("pyscf.gto"), "PySCF is required for the workflow")
+class CpuRootWindowTests(unittest.TestCase):
+    def test_partial_space_requires_a_root_above_the_target(self):
+        # A 6-31G H2 reference has one occupied and three virtual orbitals.
+        reference = SimpleNamespace(mo_coeff=np.eye(4))
+        geometry = [[0, 0, 0], [0, 0, 1.4]]
+        with patch("pyscf_esd.cpu._solve_reference", return_value=(reference, 0.0, ())):
+            for nstates in (1, 2):
+                settings = Settings("6-31g", "pbe0", nstates=nstates)
+                with self.subTest(nstates=nstates), self.assertRaisesRegex(ValueError, "higher reference root"):
+                    run_cpu_vibronic(("H", "H"), geometry, settings, target_index=nstates - 1)
 
 
 if __name__ == "__main__":

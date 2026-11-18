@@ -66,6 +66,10 @@ def _squared_magnitude(values):
     return values**2
 
 
+def _harmonic_state_count(mode_count: int, cutoff: int) -> int:
+    return comb(mode_count + cutoff, mode_count)
+
+
 def _fock_states(n_modes: int, max_quanta: int) -> NDArray[np.intp]:
     # Build each layer from the preceding one. Every state's parents then
     # precede it, including when the number of modes is larger than the cutoff.
@@ -270,11 +274,11 @@ def harmonic_spectrum(
 
     initial_cutoff = int(initial_max_quanta) if temperature_kelvin > 0 and modes else 0
     final_cutoff = int(final_max_quanta) if modes else 0
-    initial_count = comb(modes + initial_cutoff, modes)
+    initial_count = _harmonic_state_count(modes, initial_cutoff)
     # The linear dipole can raise the initial state by one quantum, so
     # the overlap basis needs a layer beyond the populated basis.
     overlap_cutoff = initial_cutoff + int(derivatives is not None and modes > 0 and temperature_kelvin > 0)
-    if comb(modes + overlap_cutoff, modes) * comb(modes + final_cutoff, modes) > max_overlaps:
+    if _harmonic_state_count(modes, overlap_cutoff) * _harmonic_state_count(modes, final_cutoff) > max_overlaps:
         raise ValueError("the requested basis exceeds max_overlaps")
     initial_states = _fock_states(modes, overlap_cutoff)
     final_states = _fock_states(modes, final_cutoff)

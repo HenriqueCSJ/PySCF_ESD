@@ -12,7 +12,7 @@ from numpy.typing import ArrayLike
 
 from .anharmonic import AnharmonicSpectrum
 from .cpu import ElectronicConvergenceError, ReferenceStabilityUnresolvedError, Settings, UnstableReferenceError
-from .harmonic import HarmonicSpectrum
+from .harmonic import HarmonicSpectrum, _harmonic_state_count
 from .harmonic_moments import photon_moment_report
 from .pyscf_adapter import AdiabaticHessianParameters
 from .state_tracking import StateTrackingError
@@ -80,6 +80,34 @@ class VibronicResult:
         return properties
 
 
+def _affordable_harmonic_bases(spectrum, temperature, max_quanta, max_overlaps):
+    """Yield the largest affordable final cutoff for each effective initial cutoff."""
+    modes = spectrum.initial_quanta.shape[1]
+    if not modes:
+        yield 0, 0
+        return
+    max_quanta, max_overlaps = int(max_quanta), int(max_overlaps)
+
+    def largest_cutoff(limit, state_budget):
+        lower, upper = 0, min(limit, state_budget - 1)
+        while lower < upper:
+            middle = (lower + upper + 1) // 2
+            if _harmonic_state_count(modes, middle) <= state_budget:
+                lower = middle
+            else:
+                upper = middle - 1
+        return lower
+
+    # Linear HT requires an extra initial layer at nonzero temperature.
+    ht_layer = int(temperature > 0 and spectrum.condon_transition_dipole_au is not None)
+    initial_limit = 0
+    if temperature > 0:
+        initial_limit = largest_cutoff(max_quanta + ht_layer, max_overlaps) - ht_layer
+    for initial in range(initial_limit + 1):
+        initial_count = _harmonic_state_count(modes, initial + ht_layer)
+        yield initial, largest_cutoff(max_quanta, max_overlaps // initial_count)
+
+
 def _adaptive_spectrum(
     solver, *, process: str, temperature: float, coverage: float,
     max_quanta: int, max_overlaps: int, qualify_photon_moments: bool = True,
@@ -87,26 +115,49 @@ def _adaptive_spectrum(
     initial = 0
     final = min(2, max_quanta)
     attempts = []
-    last_valid = {}
+    partial_spectra = {}
+    best_coverage = -np.inf
+    insufficient_initial = -1
+    tried = set()
+    fallback = None
+    overlap_error = None
     while True:
-        try:
-            spectrum = solver(
-                process=process, temperature_kelvin=temperature,
-                initial_max_quanta=initial, final_max_quanta=final, max_overlaps=max_overlaps,
-            )
-        except WorkflowIncomplete as error:
-            raise WorkflowIncomplete(
-                str(error), {"process": process, "basis_attempts": attempts, **error.diagnostics}, last_valid,
-            ) from error
-        except ValueError as error:
-            if "max_overlaps" not in str(error):
-                raise
-            raise WorkflowIncomplete(
-                f"{process} exhausted the harmonic overlap budget before reaching {coverage:.1%} coverage",
-                {"process": process, "basis_attempts": attempts, "max_overlaps": max_overlaps,
-                 "target_coverage": coverage},
-                last_valid,
-            ) from error
+        if fallback is not None:
+            basis = next(fallback, None)
+            if basis is None:
+                break
+            initial, final = basis
+        basis = initial, final
+        spectrum = None
+        # Greedy regrowth can reach a cutoff rejected during startup backoff.
+        if basis not in tried:
+            tried.add(basis)
+            try:
+                spectrum = solver(
+                    process=process, temperature_kelvin=temperature,
+                    initial_max_quanta=initial, final_max_quanta=final, max_overlaps=max_overlaps,
+                )
+            except WorkflowIncomplete as error:
+                raise WorkflowIncomplete(
+                    str(error), {"process": process, "basis_attempts": attempts, **error.diagnostics}, partial_spectra,
+                ) from error
+            except ValueError as error:
+                if "max_overlaps" not in str(error):
+                    raise
+                overlap_error = error
+        if spectrum is None:
+            if not attempts and final > 0:
+                final -= 1
+                continue
+            if fallback is None and qualify_photon_moments and isinstance(partial_spectra.get(process), HarmonicSpectrum):
+                # Final-state coverage improves within a row, and changing its
+                # final cutoff cannot improve the initial thermal population.
+                frontier = _affordable_harmonic_bases(partial_spectra[process], temperature, max_quanta, max_overlaps)
+                nearest = sorted(frontier, key=lambda pair: (abs(pair[0] - initial), -pair[0]))
+                fallback = (pair for pair in nearest if pair not in tried and pair[0] > insufficient_initial)
+            if fallback is None:
+                break
+            continue
         population = spectrum.initial_population_coverage
         strength = spectrum.final_dipole_strength_coverage
         moments = getattr(spectrum, "positive_photon_moments", None) if qualify_photon_moments else None
@@ -117,18 +168,30 @@ def _adaptive_spectrum(
             "positive_photon_moments": moment_report,
         })
         if not np.isfinite(population) or (strength is not None and not np.isfinite(strength)):
-            raise WorkflowIncomplete(f"{process} has nonfinite coverage", {"basis_attempts": attempts}, last_valid)
-        last_valid = {process: spectrum}
+            raise WorkflowIncomplete(f"{process} has nonfinite coverage", {"basis_attempts": attempts}, partial_spectra)
+        # A trade between cutoffs can reduce coverage. Keep the partial result
+        # whose weakest required coverage is closest to the target.
+        coverage_floor = min(
+            population, 1.0 if strength is None else strength,
+            *(entry.get("coverage_lower_bound", 0.0) for entry in moment_report.values()),
+        )
+        if not qualify_photon_moments or coverage_floor >= best_coverage:
+            best_coverage = coverage_floor
+            partial_spectra = {process: spectrum}
         if qualify_photon_moments and any(entry["status"] == "unassessed" for entry in moment_report.values()):
             raise WorkflowIncomplete(
                 f"{process} could not bound the omitted positive-photon moments",
                 {"process": process, "basis_attempts": attempts, "target_coverage": coverage},
-                last_valid,
+                partial_spectra,
             )
         incomplete_moments = [entry for entry in moment_report.values() if entry["status"] == "incomplete"]
         strength_converged = strength is None or strength >= coverage
         if population >= coverage and strength_converged and not incomplete_moments:
             return spectrum, attempts
+        if population < coverage:
+            insufficient_initial = max(insufficient_initial, initial)
+        if fallback is not None:
+            continue
         if population < coverage and initial < max_quanta:
             initial += 1
             continue
@@ -152,8 +215,14 @@ def _adaptive_spectrum(
             f"{process} reached the vibrational ceiling before obtaining {coverage:.1%} coverage",
             {"process": process, "basis_attempts": attempts, "max_quanta": max_quanta,
              "target_coverage": coverage},
-            last_valid,
+            partial_spectra,
         )
+    raise WorkflowIncomplete(
+        f"{process} exhausted the harmonic overlap budget before reaching {coverage:.1%} coverage",
+        {"process": process, "basis_attempts": attempts, "max_overlaps": max_overlaps,
+         "target_coverage": coverage},
+        partial_spectra,
+    ) from overlap_error
 
 
 def _prepare_reference(prepare, settings: Settings, fallback_xc: Sequence[str], attempts: list[dict], progress):
@@ -276,6 +345,7 @@ def run_vibronic(
     settings: Settings | None = None,
     *,
     target_index: int = 0,
+    masses_amu: ArrayLike | None = None,
     model: Literal["auto", "ah", "vg"] = "auto",
     backend: Literal["cpu", "gpu"] = "cpu",
     solvent: str | None = None,
@@ -289,7 +359,9 @@ def run_vibronic(
 ) -> VibronicResult:
     """Predict singlet absorption and/or relaxed-state emission from one geometry.
 
-    Coordinates are Cartesian bohr in atom order. The zero-based target labels
+    Coordinates are Cartesian bohr in atom order. Supply ``masses_amu`` to
+    override PySCF's isotope-averaged atomic masses in the same order.
+    The zero-based target labels
     the root at the relaxed ground geometry. The default requests adiabatic
     Hessians, Duschinsky rotation and Herzberg–Teller amplitudes, then screens
     direct electronic cuts for anharmonic effects. A requested model that
@@ -304,6 +376,8 @@ def run_vibronic(
     preparation after a restricted-to-unrestricted instability. The target
     index is defined at the ground minimum of each attempted functional.
     """
+    from .pyscf_adapter import _validated_masses
+
     if model not in ("auto", "ah", "vg"):
         raise ValueError("model must be auto, ah or vg")
     if backend not in ("cpu", "gpu"):
@@ -319,6 +393,8 @@ def run_vibronic(
     geometry = np.asarray(coordinates_bohr, dtype=float)
     if len(symbols) < 2 or geometry.shape != (len(symbols), 3) or not np.isfinite(geometry).all():
         raise ValueError("provide at least two atoms and one finite Cartesian point per atom")
+    if masses_amu is not None:
+        masses_amu = _validated_masses(masses_amu, len(symbols)).copy()
     if settings is None:
         settings = replace(DEFAULT_SETTINGS, nstates=max(DEFAULT_SETTINGS.nstates, target_index + 2))
     elif not isinstance(settings, Settings):
@@ -328,8 +404,8 @@ def run_vibronic(
     fallback_xc = tuple(fallback_xc)
     if any(not isinstance(xc, str) or not xc.strip() for xc in fallback_xc):
         raise ValueError("fallback_xc must contain nonempty XC names")
-    if model == "vg" and target_index >= settings.nstates - 1:
-        raise ValueError("request the target root and at least one higher reference root")
+    if model == "vg" and target_index >= settings.nstates:
+        raise ValueError("target_index must name a requested root")
 
     requested = asdict(settings)
     attempts = []
@@ -337,7 +413,7 @@ def run_vibronic(
         result = _prepare_reference(
             lambda candidate: _run_vibronic_model(
                 symbols, geometry, candidate, target_index=target_index, model=model, backend=backend,
-                solvent=solvent, process=process,
+                solvent=solvent, process=process, masses_amu=masses_amu,
                 temperature_kelvin=temperature_kelvin, coverage=coverage, max_quanta=max_quanta,
                 max_overlaps=max_overlaps, progress=progress,
             ),
@@ -359,7 +435,7 @@ def run_vibronic(
 
 def _run_vibronic_model(
     symbols, geometry, settings, *, target_index, model, backend, solvent, process, temperature_kelvin,
-    coverage, max_quanta, max_overlaps, progress,
+    coverage, max_quanta, max_overlaps, progress, masses_amu,
 ) -> VibronicResult:
     from .electronic_workflow import optimize_ground, prepare_electronic
 
@@ -370,18 +446,24 @@ def _run_vibronic_model(
         "temperature_kelvin": float(temperature_kelvin), "target_coverage": float(coverage),
         "basis_attempts": {},
     }
+    mass_options = {}
+    if masses_amu is not None:
+        diagnostics["atom_masses_amu"] = masses_amu.tolist()
+        mass_options["masses_amu"] = masses_amu
     if model == "vg":
         if progress is not None:
             progress("Optimizing S0 and evaluating the vertical-gradient model")
         if backend == "gpu":
             from .gpu_adiabatic import prepare_gpu_vg
 
-            ground, vg = prepare_gpu_vg(symbols, geometry, settings, target_index=target_index, solvent=solvent)
+            ground, vg = prepare_gpu_vg(
+                symbols, geometry, settings, target_index=target_index, solvent=solvent, **mass_options,
+            )
         else:
             from .cpu_workflow import run_cpu_vibronic
 
-            ground = optimize_ground(symbols, geometry, settings)
-            vg = run_cpu_vibronic(symbols, ground, settings, target_index=target_index)
+            ground = optimize_ground(symbols, geometry, settings, **mass_options)
+            vg = run_cpu_vibronic(symbols, ground, settings, target_index=target_index, **mass_options)
         diagnostics["ground_coordinates_bohr"] = np.asarray(ground).tolist()
         diagnostics["gap_00_hartree"] = vg.model.gap_00_hartree
         diagnostics["harmonic_reference"] = harmonic_model_properties(vg.model)
@@ -397,10 +479,11 @@ def _run_vibronic_model(
 
             electronic = prepare_gpu_electronic(
                 symbols, geometry, settings, target_index=target_index, direct_dipole=direct_dipole, solvent=solvent,
+                **mass_options,
             )
         else:
             electronic = prepare_electronic(
-                symbols, geometry, settings, target_index=target_index, direct_dipole=direct_dipole,
+                symbols, geometry, settings, target_index=target_index, direct_dipole=direct_dipole, **mass_options,
             )
         diagnostics.update(
             electronic=electronic.diagnostics,

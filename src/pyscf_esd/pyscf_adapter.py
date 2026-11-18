@@ -178,9 +178,7 @@ def adiabatic_hessian(
         masses_amu = ground_mol.atom_mass_list(isotope_avg=True)
         if not np.array_equal(masses_amu, excited_mol.atom_mass_list(isotope_avg=True)):
             raise ValueError("the two Mole inputs must have matching atom-ordered masses")
-    mass = _as_real_array(masses_amu, (natm,), "masses in amu")
-    if np.any(mass <= 0):
-        raise ValueError("masses in amu must be positive")
+    mass = _validated_masses(masses_amu, natm)
 
     energy0 = float(_as_real_array(ground_energy_hartree, (), "ground total energy"))
     energy1 = float(_as_real_array(excited_energy_hartree, (), "excited total energy"))
@@ -294,9 +292,7 @@ def vertical_gradient(
 
     if masses_amu is None:
         masses_amu = mol.atom_mass_list(isotope_avg=True)
-    mass = _as_real_array(masses_amu, (natm,), "masses in amu")
-    if np.any(mass <= 0):
-        raise ValueError("masses in amu must be positive")
+    mass = _validated_masses(masses_amu, natm)
 
     modes = harmonic_analysis(mol, hessian, imaginary_freq=False, mass=mass)
     mass_factor = np.sqrt(AMU2AU)
@@ -352,6 +348,13 @@ def _stationary_modes(
     if np.any(force_constants <= zero):
         raise ValueError(f"{name} Hessian has imaginary or zero vibrational frequencies")
     return np.sqrt(force_constants), vibrational @ eigenvectors
+
+
+def _validated_masses(values: ArrayLike, natm: int) -> NDArray[np.float64]:
+    mass = _as_real_array(values, (natm,), "masses in amu")
+    if np.any(mass <= 0):
+        raise ValueError("masses in amu must be positive")
+    return mass
 
 
 def _symmetric_hessian(values: ArrayLike, natm: int, name: str) -> NDArray[np.float64]:

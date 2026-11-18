@@ -4,7 +4,7 @@ from dataclasses import replace
 
 import numpy as np
 
-from .cpu import ElectronicConvergenceError, OrbitalSeed
+from .cpu import ElectronicConvergenceError, OrbitalSeed, _vg_root_count
 from .cpu_workflow import _prepare_vg_center
 from .electronic_workflow import (
     _ElectronicSession, _prepare_electronic, _prepare_ground, _ROOT_GAP,
@@ -22,7 +22,7 @@ class _GpuElectronicSession(_ElectronicSession):
     quadrature_grid_response = True
     ground_hessian_route = "analytic_gpu_df_rks"
 
-    def __init__(self, symbols, coordinates, settings, *, solvent):
+    def __init__(self, symbols, coordinates, settings, *, solvent, masses_amu=None):
         from pyscf.dft import libxc
         from pyscf.scf.dispersion import parse_dft
 
@@ -30,7 +30,7 @@ class _GpuElectronicSession(_ElectronicSession):
         if (dispersion is not None or libxc.is_nlc(xc) or libxc.xc_type(xc) not in ("LDA", "GGA")
                 or libxc.rsh_coeff(xc)[0] != 0 or not libxc.is_hybrid_xc(xc)):
             raise ValueError("the analytic GPU workflow requires a global hybrid LDA/GGA without dispersion or NLC")
-        super().__init__(symbols, coordinates, settings)
+        super().__init__(symbols, coordinates, settings, masses_amu=masses_amu)
         self.solvent = solvent
 
     def _ground_reference(self, molecule, previous):
@@ -101,21 +101,25 @@ class _GpuElectronicSession(_ElectronicSession):
         }
 
 
-def prepare_gpu_electronic(symbols, coordinates, settings, *, target_index, direct_dipole, solvent):
-    session = _GpuElectronicSession(symbols, coordinates, settings, solvent=solvent)
+def prepare_gpu_electronic(symbols, coordinates, settings, *, target_index, direct_dipole, solvent, masses_amu=None):
+    session = _GpuElectronicSession(symbols, coordinates, settings, solvent=solvent, masses_amu=masses_amu)
     require_semilocal_xc_fourth(settings.xc)
     return _prepare_electronic(session, target_index=target_index, direct_dipole=direct_dipole)
 
 
-def prepare_gpu_vg(symbols, coordinates, settings, *, target_index, solvent):
-    session = _GpuElectronicSession(symbols, coordinates, settings, solvent=solvent)
+def prepare_gpu_vg(symbols, coordinates, settings, *, target_index, solvent, masses_amu=None):
+    session = _GpuElectronicSession(symbols, coordinates, settings, solvent=solvent, masses_amu=masses_amu)
     minima, _ = _prepare_ground(session)
     ground, hessian = minima[0]
+    nocc = ground.seed.nocc
+    dimension = nocc * (ground.seed.mo_coeff.shape[1] - nocc)
+    _vg_root_count(settings.nstates, target_index, dimension)
     tracked = session.start_tracking(ground, target_index)
     if abs(tracked.point.ground_energy_hartree - ground.energy) > 1e-8:
         raise ElectronicConvergenceError("the GPU VG center differs from the optimized ground reference")
     vg = _prepare_vg_center(
         tracked.point, tracked.root, stationary_tolerance=_STATIONARY_TOLERANCE,
         minimum_gap_hartree=_ROOT_GAP, ground_hessian_symmetry_tolerance=1e-5, ground_hessian=hessian,
+        masses_amu=session.masses,
     )
     return ground.coordinates, vg

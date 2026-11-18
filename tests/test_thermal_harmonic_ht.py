@@ -89,6 +89,90 @@ class ThermalHarmonicHTTests(unittest.TestCase):
         self.assertAlmostEqual(profile.positive_photon_weighted_strength, raising_strength * (gap + omega), places=12)
         self.assertAlmostEqual(profile.centroid_cm_inverse, 730.0, places=7)
 
+    def test_pure_ht_emission_weights_sticks_before_broadening_at_threshold(self):
+        omega = 0.01
+        width = 80.0
+        sigma = width / np.sqrt(8 * np.log(2))
+        for photon_cm in (-1.0, 0.0, 1.0, 500.0):
+            gap = -(omega + photon_cm / CM)
+            options = dict(
+                gap_00_hartree=gap, transition_dipole_au=[0, 0, 0],
+                dipole_derivatives_au=[[np.sqrt(2 * omega), 0, 0]], process="emission", temperature_kelvin=0,
+            )
+            sticks = harmonic_spectrum([omega], [omega], initial_max_quanta=0, final_max_quanta=2, **options)
+            expected = float(sticks.thermal_strength_au2 @ sticks.photon_energy_hartree**3)
+            for step in (1.0, 0.5):
+                with self.subTest(photon_cm=photon_cm, step=step):
+                    profile = thermal_harmonic_spectrum(
+                        [omega], [omega], fwhm_cm_inverse=width, step_cm_inverse=step,
+                        include_dipole_strength_density=True, **options,
+                    )
+                    self.assertEqual(profile.auxiliary_sigma_cm_inverse, 0.0)
+                    self.assertEqual(profile.negative_weight_grid_fraction, 0.0)
+                    self.assertAlmostEqual(profile.signed_dipole_strength_au2, 1.0)
+                    np.testing.assert_allclose(profile.positive_photon_weighted_strength, expected, atol=0, rtol=1e-12)
+                    if photon_cm <= 0:
+                        self.assertIsNone(profile.centroid_cm_inverse)
+                        self.assertFalse(np.any(profile.photon_weighted_density_per_cm_inverse))
+                        self.assertFalse(np.any(profile.dipole_strength_density_per_cm_inverse))
+                    else:
+                        self.assertAlmostEqual(profile.centroid_cm_inverse, photon_cm, places=10)
+                        axis = profile.wavenumber_cm_inverse
+                        gaussian = np.exp(-0.5 * ((axis - photon_cm) / sigma)**2) / (sigma * np.sqrt(2 * np.pi))
+                        np.testing.assert_allclose(profile.dipole_strength_density_per_cm_inverse, gaussian, atol=1e-15)
+                        error = np.abs(profile.photon_weighted_density_per_cm_inverse - expected * gaussian).sum() * step
+                        self.assertLess(error / expected, 1e-12)
+
+    def test_displaced_threshold_profile_rejects_unresolved_fft_cutoff(self):
+        with self.assertRaisesRegex(ValueError, "cannot resolve the positive photon-energy cutoff"):
+            thermal_harmonic_spectrum(
+                [0.01], [0.01], gap_00_hartree=-1 / CM, transition_dipole_au=[1, 0, 0], shift_au=[5],
+                process="emission", temperature_kelvin=0, fwhm_cm_inverse=80, step_cm_inverse=1.0,
+            )
+
+    def test_undisplaced_ht_broadens_multiple_off_mesh_lines_at_their_energies(self):
+        omega = 600 / CM
+        fwhm = 24.0
+        line_energy = np.array([2002.0, 2602.0])
+        sigma = fwhm / np.sqrt(8 * np.log(2))
+        for step in (4, 4.0):
+            with self.subTest(step=step):
+                profile = thermal_harmonic_spectrum(
+                    [omega], [omega], gap_00_hartree=2002 / CM, transition_dipole_au=[1, 0, 0],
+                    dipole_derivatives_au=[[np.sqrt(2 * omega), 0, 0]], process="absorption", temperature_kelvin=0,
+                    fwhm_cm_inverse=fwhm, step_cm_inverse=step, include_dipole_strength_density=True,
+                )
+                offset = (profile.wavenumber_cm_inverse[:, None] - line_energy) / sigma
+                gaussian = np.exp(-0.5 * offset**2) / (sigma * np.sqrt(2 * np.pi))
+                for actual, expected in (
+                    (profile.dipole_strength_density_per_cm_inverse, gaussian.sum(axis=1)),
+                    (profile.photon_weighted_density_per_cm_inverse, gaussian @ (line_energy / CM)),
+                ):
+                    self.assertLess(np.max(np.abs(actual - expected)) / expected.max(), 2e-13)
+
+    def test_cold_displaced_emission_respects_upper_photon_support(self):
+        for origin in (-1, 500):
+            with self.subTest(origin=origin):
+                options = dict(
+                    gap_00_hartree=-origin / CM, transition_dipole_au=[1, 0, 0], shift_au=[5],
+                    process="emission", temperature_kelvin=0,
+                )
+                profile = thermal_harmonic_spectrum(
+                    [0.01], [0.01], fwhm_cm_inverse=80, step_cm_inverse=1.0,
+                    include_dipole_strength_density=True, **options,
+                )
+                self.assertAlmostEqual(profile.signed_dipole_strength_au2, 1.0)
+                if origin < 0:
+                    self.assertEqual(profile.positive_photon_weighted_strength, 0.0)
+                    self.assertIsNone(profile.centroid_cm_inverse)
+                    self.assertFalse(np.any(profile.photon_weighted_density_per_cm_inverse))
+                    self.assertFalse(np.any(profile.dipole_strength_density_per_cm_inverse))
+                else:
+                    sticks = harmonic_spectrum([0.01], [0.01], initial_max_quanta=0, final_max_quanta=2, **options)
+                    expected = float(sticks.thermal_strength_au2 @ sticks.photon_energy_hartree**3)
+                    np.testing.assert_allclose(profile.positive_photon_weighted_strength, expected, atol=0, rtol=1e-9)
+                    self.assertAlmostEqual(profile.centroid_cm_inverse, origin, places=7)
+
     def test_zero_slope_matches_condon_and_global_electronic_phase_is_invariant(self):
         options = dict(gap_00_hartree=4300 / CM, shift_au=[5.2], process="absorption", temperature_kelvin=298,
                        fwhm_cm_inverse=50.0, step_cm_inverse=0.6)

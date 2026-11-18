@@ -187,19 +187,25 @@ def run_gpu_vibronic(
     target_index: int, stationary_tolerance: float = 1e-5,
     minimum_gap_hartree: float = 1e-4, ground_hessian_symmetry_tolerance: float = 1e-5,
     hessian_grid_response: bool = False,
+    masses_amu: ArrayLike | None = None,
 ) -> CpuVibronicResult:
     """Run the analytic VG model at a single stationary S0 geometry on GPU."""
     from .cpu_workflow import _prepare_vg_center, _validate_center_options
+    from .pyscf_adapter import _validated_masses
 
     center_options = dict(
         stationary_tolerance=stationary_tolerance, minimum_gap_hartree=minimum_gap_hartree,
         ground_hessian_symmetry_tolerance=ground_hessian_symmetry_tolerance,
     )
     _validate_center_options(settings, target_index, **center_options)
+    if target_index == settings.nstates - 1:
+        raise ValueError("request the target and at least one higher reference root")
+    if masses_amu is not None:
+        masses_amu = _validated_masses(masses_amu, len(symbols))
     center = solve_point(
         symbols, coordinates_bohr, settings, hessian_grid_response=hessian_grid_response,
     )
-    return _prepare_vg_center(center, target_index, **center_options)
+    return _prepare_vg_center(center, target_index, masses_amu=masses_amu, **center_options)
 
 
 def _ground_hessian(mean_field, settings, natm, *, grid_response):
@@ -334,8 +340,9 @@ def _scf_residual(mean_field, cupy):
     # and the incremental potential from the SCF iterations.
     density = mean_field.make_rdm1()
     _require_device_fp64(density, cupy, "RKS density")
-    # PCM adds its tagged reaction-field potential in get_fock.
-    fock = mean_field.get_fock(dm_or_wfn=density)
+    # Direct RKS calls the fourth argument dm and PCM calls it dm_or_wfn.
+    # Use the native builder so PCM adds its tagged reaction-field potential.
+    fock = mean_field.get_fock(None, None, None, density)
     _require_device_fp64(fock, cupy, "fresh RKS Fock matrix")
     gradient = mean_field.get_grad(mo, mean_field.mo_occ, fock)
     _require_device_fp64(gradient, cupy, "RKS orbital gradient")

@@ -106,11 +106,13 @@ class ElectronicOptimizationTests(unittest.TestCase):
         np.testing.assert_allclose(calls, expected_calls)
 
         calls.clear()
-        saturation[2] = 1.
+        saturation[2] = .95
         diagnostics = _check_ht_zero_point(session, center, modes, frequencies, derivatives)
         self.assertEqual(diagnostics["status"], "passed")
-        self.assertEqual(diagnostics["ground_mode_index"], 1)
+        self.assertEqual(diagnostics["ground_mode_index"], 2)
         self.assertEqual(diagnostics["checked_ground_mode_indices"], [1, 2])
+        self.assertAlmostEqual(diagnostics["max_dipole_error_au"], .010)
+        self.assertAlmostEqual(diagnostics["dipole_error_limit_au"], .012352)
         np.testing.assert_allclose(calls, expected_calls)
 
     def test_ground_hessian_seed_reduces_steps_on_same_surface(self):

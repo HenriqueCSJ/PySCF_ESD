@@ -12,7 +12,7 @@ from .cpu import (
     ElectronicConvergenceError, ElectronicPoint, Settings, build_molecule, require_stable_reference, solve_point,
 )
 from .harmonic import HarmonicSpectrum, harmonic_spectrum
-from .pyscf_adapter import VerticalGradientParameters, vertical_gradient
+from .pyscf_adapter import VerticalGradientParameters, _validated_masses, vertical_gradient
 from .state_tracking import StateMatch, StateTrackingError, orbital_overlap_blocks, track_state
 
 
@@ -94,17 +94,22 @@ def _write_checkpoint(path: Path, **fields) -> None:
 def _match_point(center, other_mol, data, target_index, thresholds):
     from pyscf import gto
 
+    nocc = int(data["nocc"])
+    count = len(data["excitation_energies_hartree"])
+    complete = count == nocc * (data["mo_coeff"].shape[1] - nocc)
+    if complete and count == 1:
+        thresholds = {**thresholds, "minimum_margin": 0.0, "minimum_gap_hartree": 0.0}
     cross_overlap = gto.intor_cross("int1e_ovlp", center.mol, other_mol)
     occ, vir = orbital_overlap_blocks(
         center.mo_coeff, data["mo_coeff"], cross_overlap,
         2 * (np.arange(center.mo_coeff.shape[1]) < center.nocc),
-        2 * (np.arange(data["mo_coeff"].shape[1]) < int(data["nocc"])),
+        2 * (np.arange(data["mo_coeff"].shape[1]) < nocc),
     )
     match = track_state(
         center.amplitudes[target_index], data["amplitudes"], occ, vir,
         candidate_energies_hartree=data["excitation_energies_hartree"], **thresholds,
     )
-    if match.index == len(data["excitation_energies_hartree"]) - 1:
+    if match.index == count - 1 and not complete:
         raise StateTrackingError("the match is the highest solved root; request additional roots")
     return match
 
@@ -115,8 +120,8 @@ def _validate_center_options(
 ) -> None:
     if isinstance(target_index, (bool, np.bool_)) or not isinstance(target_index, (int, np.integer)):
         raise ValueError("target_index must be an integer")
-    if not 0 <= target_index < settings.nstates - 1:
-        raise ValueError("request the target and at least one higher reference root")
+    if not 0 <= target_index < settings.nstates:
+        raise ValueError("target_index must name a requested root")
     if not np.isfinite(stationary_tolerance) or stationary_tolerance <= 0:
         raise ValueError("stationary_tolerance must be positive and finite")
     if not np.isfinite(ground_hessian_symmetry_tolerance) or ground_hessian_symmetry_tolerance <= 0:
@@ -129,6 +134,7 @@ def _prepare_vg_center(
     center: ElectronicPoint, target_index: int, *, stationary_tolerance: float,
     minimum_gap_hartree: float, ground_hessian_symmetry_tolerance: float,
     ground_hessian: NDArray[np.float64] | None = None,
+    masses_amu: ArrayLike | None = None,
 ) -> CpuVibronicResult:
     """Apply the same central-state checks and construct VG on either device."""
     require_stable_reference(*center.reference_stability(), "Vertical-gradient center reference")
@@ -148,7 +154,7 @@ def _prepare_vg_center(
         raise ValueError(f"ground Hessian asymmetry {asymmetry:.3g} Hartree/bohr² exceeds tolerance")
     symmetric_hessian = (hessian + hessian_transpose) * 0.5
     model = vertical_gradient(
-        center.mol, symmetric_hessian, excited_gradient,
+        center.mol, symmetric_hessian, excited_gradient, masses_amu=masses_amu,
         vertical_excitation_hartree=center.excitation_energies_hartree[target_index],
         transition_dipole_au=center.transition_dipoles_au[target_index],
     )
@@ -177,6 +183,7 @@ def run_cpu_vibronic(
     excited_hessian_symmetry_tolerance: float = 2e-4,
     include_ht: bool = False,
     compute_excited_hessian: bool = False,
+    masses_amu: ArrayLike | None = None,
 ) -> CpuVibronicResult:
     """Run a CPU RKS/TDA vertical-gradient model at a stationary ground-state geometry.
 
@@ -185,6 +192,7 @@ def run_cpu_vibronic(
     Request ``include_ht`` for transition dipole differences or
     ``compute_excited_hessian`` for differences of the excited gradients.
     Both use central differences with state tracking in the supplied lab frame.
+    ``masses_amu`` supplies masses in atom order for the vibrational model.
     Checkpoints retain raw dipoles and amplitudes for consistent phase matching.
     Each Hessian is symmetrized within its own tolerance (Hartree/bohr²).
     """
@@ -210,12 +218,15 @@ def run_cpu_vibronic(
         raise ValueError("symbols must contain one element symbol per atom")
     symbols = tuple(symbols)
     coordinates = np.asarray(coordinates_bohr)
-    center = solve_point(symbols, coordinates, settings)
+    if masses_amu is not None:
+        masses_amu = _validated_masses(masses_amu, len(symbols))
     target_index = int(target_index)
+    center = solve_point(symbols, coordinates, settings, _vg_target_index=target_index)
     result = _prepare_vg_center(
         center, target_index, stationary_tolerance=stationary_tolerance,
         minimum_gap_hartree=minimum_gap_hartree,
         ground_hessian_symmetry_tolerance=ground_hessian_symmetry_tolerance,
+        masses_amu=masses_amu,
     )
     model = result.model
     if not (include_ht or compute_excited_hessian):
@@ -224,6 +235,7 @@ def run_cpu_vibronic(
     import pyscf
     from pyscf import dft
 
+    settings = center.settings
     config = json.dumps({
         "schema_version": 1, "pyscf": pyscf.__version__, "numpy": np.__version__,
         "libxc": dft.libxc.__version__,

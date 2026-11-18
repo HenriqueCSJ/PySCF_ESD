@@ -4,7 +4,7 @@ from contextlib import nullcontext
 from importlib.util import find_spec
 from types import SimpleNamespace
 import unittest
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, create_autospec, patch
 
 import numpy as np
 
@@ -34,7 +34,13 @@ def device_array(value):
 
 
 class GpuBackendTests(unittest.TestCase):
-    def test_residual_uses_native_fock_including_pcm_potential(self):
+    def test_residual_uses_both_native_fock_signatures(self):
+        def direct_fock(h1e=None, s1e=None, vhf=None, dm=None):
+            pass
+
+        def pcm_fock(h1e=None, s1e=None, vhf=None, dm_or_wfn=None):
+            pass
+
         coeff = device_array(np.eye(2))
         density = device_array([[2., 0.], [0., 0.]])
         fock = device_array([[-1., 0.], [0., .2]])
@@ -42,13 +48,16 @@ class GpuBackendTests(unittest.TestCase):
             mol=SimpleNamespace(nao_nr=lambda: 2, nelectron=2),
             mo_coeff=coeff, mo_occ=device_array([2., 0.]), mo_energy=device_array([-1., .2]), e_tot=-1.,
             get_ovlp=lambda: coeff, make_rdm1=lambda: density,
-            get_fock=Mock(return_value=fock), get_grad=Mock(return_value=device_array([0.])),
+            get_grad=Mock(return_value=device_array([0.])),
         )
         cupy = SimpleNamespace(ndarray=DeviceArray, linalg=SimpleNamespace(norm=np.linalg.norm))
-        residual, _ = _scf_residual(mf, cupy)
-        self.assertEqual(residual, 0.)
-        self.assertIs(mf.get_fock.call_args.kwargs["dm_or_wfn"], density)
-        self.assertIs(mf.get_grad.call_args.args[-1], fock)
+        for native_fock in (direct_fock, pcm_fock):
+            with self.subTest(fock=native_fock.__name__):
+                mf.get_fock = create_autospec(native_fock, return_value=fock)
+                residual, _ = _scf_residual(mf, cupy)
+                self.assertEqual(residual, 0.)
+                self.assertIs(mf.get_fock.call_args.args[3], density)
+                self.assertIs(mf.get_grad.call_args.args[-1], fock)
 
     def test_rejects_unqualified_requests_before_building_a_molecule(self):
         with patch("pyscf_esd.gpu.build_molecule") as build:

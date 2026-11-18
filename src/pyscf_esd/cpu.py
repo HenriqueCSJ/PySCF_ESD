@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from math import isfinite
 from numbers import Integral, Real
 from types import FunctionType, SimpleNamespace
@@ -740,6 +740,7 @@ def solve_point(
     settings: Settings,
     *,
     previous: OrbitalSeed | ElectronicPoint | None = None,
+    _vg_target_index: int | None = None,
 ) -> ElectronicPoint:
     """Run RKS and singlet TDA at one point. Derivatives are explicitly requested later."""
     mol = build_molecule(symbols, coordinates_bohr, settings)
@@ -747,7 +748,11 @@ def solve_point(
     nocc = mol.nelectron // 2
     nmo = mean_field.mo_coeff.shape[1]
     nvir = nmo - nocc
-    if settings.nstates > nocc * nvir:
+    if _vg_target_index is not None:
+        count = _vg_root_count(settings.nstates, _vg_target_index, nocc * nvir)
+        if count != settings.nstates:
+            settings = replace(settings, nstates=count)
+    elif settings.nstates > nocc * nvir:
         raise ValueError("nstates exceeds the number of occupied–virtual pairs")
     td = mean_field.TDA()
     td.singlet = True
@@ -795,6 +800,15 @@ def solve_point(
         scf_residual=residual, tda_residuals=_readonly(ratios), attempts=attempts,
         _mean_field=mean_field, _tda=td, tda_route=tda_route,
     )
+
+
+def _vg_root_count(requested: int, target_index: int, dimension: int) -> int:
+    if not 0 <= target_index < dimension:
+        raise ValueError(f"target index {target_index} is outside the {dimension} singlet TDA pairs")
+    count = min(requested, dimension)
+    if target_index >= count or (target_index == count - 1 and count < dimension):
+        raise ValueError("request the target and at least one higher reference root, or the full TDA space")
+    return count
 
 
 def _make_mean_field(mol: Mole, settings: Settings) -> RKS:
