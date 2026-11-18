@@ -6,7 +6,7 @@
 \usepackage{amsmath,amssymb}
 \usepackage{graphicx,caption,booktabs,tabularx,siunitx,array}
 \usepackage{microtype,placeins,fancyhdr}
-\usepackage[hidelinks,pdftitle={State-tracked vibronic spectroscopy with PySCF ESD},pdfauthor={PySCF ESD project},bookmarksopen]{hyperref}
+\usepackage[hidelinks,pdftitle={State-tracked vibronic spectroscopy with observable-specific convergence},pdfauthor={PySCF ESD project},bookmarksopen]{hyperref}
 
 \graphicspath{{./}{docs/paper/}{../benchmarks/}{docs/benchmarks/}}
 \makeatletter
@@ -28,7 +28,7 @@
 \pagestyle{fancy}
 \fancyhf{}
 \fancyhead[L]{\small\itshape PySCF ESD}
-\fancyhead[R]{\small\itshape Vibronic absorption and fluorescence}
+\fancyhead[R]{\small\itshape Vibronic spectra and radiative rates}
 \fancyfoot[C]{\thepage}
 \renewcommand{\headrulewidth}{0.25pt}
 \fancypagestyle{plain}{\fancyhf{}\fancyfoot[C]{\thepage}\renewcommand{\headrulewidth}{0pt}}
@@ -40,7 +40,7 @@
     \label{#2}
   \end{figure}}
 
-\title{\textbf{State-tracked vibronic absorption and fluorescence with PySCF ESD}}
+\title{\textbf{State-tracked vibronic spectroscopy with observable-specific convergence}}
 \author{PySCF ESD project}
 \date{}
 \begin{document}
@@ -48,15 +48,17 @@
 
 \pdfbookmark[1]{Abstract}{abstract}
 \section*{Abstract}
-PySCF ESD computes vibronic absorption, fluorescence, phosphorescence, and radiative rates. The workflow follows electronic identity and phase, evaluates coherent Franck--Condon and Herzberg--Teller amplitudes, and checks convergence of the vibrational basis. A prepared density-fitted Tamm--Dancoff route gives analytic singlet excited-state Hessians and transition-dipole derivatives with equilibrium continuum response. In CF$_3$NO, a periodic rotor with 11 harmonic spectators places the absorption maximum 498.50~\wn\ above the calculated origin, compared with 499.90~\wn\ relative to the measured jet origin. Anharmonic PBE reduces the benzene fluorescence-profile error by 38\% at the same adjusted linewidth. The analytic curvature and dipole model brings the ratio of the first two fluorescence band areas of 9-cyanoanthracene from 0.69 to 1.37, compared with 1.21 measured. In naphthalene, full-space spin--orbit response gives a predominantly out-of-plane phosphorescence rate, and gas-phase analytic Herzberg--Teller coupling raises the 77 K rate from 0.05676 to 0.06437~s$^{-1}$. A continuum Condon control preserves the two ring-mode peaks resolved in the calculated spectrum near the broad band of the 77 K glass measurement.
+A vibronic calculation can reproduce a band envelope while missing its absolute energy or radiative strength. We present PySCF ESD, a workflow that follows electronic identity and phase from geometry optimization to coherent Franck--Condon and Herzberg--Teller amplitudes. For harmonic spectra it bounds omitted contributions to oscillator strength, radiative rate, and radiant power separately. In an exact one-mode near-threshold control, 99.9\% thermal population coverage and full final dipole closure admit a rate of $1.07\times10^{-7}$~s$^{-1}$, whereas the energy-weighted criterion recovers $0.859$~s$^{-1}$. A density-fitted Tamm--Dancoff implementation supplies analytic excited-state Hessians and transition-dipole derivatives for isolated singlets with equilibrium continuum response. In CF$_3$NO, periodic torsion with 11 harmonic spectators recovers the absorption peak-to-origin spacing within 1.40~\wn\ despite a native absorption-maximum error of 761~\wn\ on the retained spin-unstable restricted surfaces. For benzene, anharmonic PBE lowers the aligned fluorescence-profile error by 38\% relative to its harmonic counterpart at matched linewidth. In naphthalene at 77 K, extending spin--orbit intensity borrowing from a 12-singlet, 12-triplet window to the full Tamm--Dancoff space increases the Condon rate from 0.00260 to 0.05676~s$^{-1}$ and recovers predominantly perpendicular emission. Analytic gas-phase spin-vibronic coupling raises the rate to 0.06437~s$^{-1}$. These controls distinguish errors in electronic response, nuclear motion, and spectral truncation that call for different remedies.
 
 \section{Introduction}
 
-A vertical excitation energy is an electronic gap at a fixed nuclear geometry. A vibronic maximum also depends on nuclear reorganization, vibrational populations, and the changing electronic transition moment. Absorption and fluorescence populate different initial surfaces. Resolving their band energies, line strengths, and radiative rates requires a consistent description of both surfaces.
+An electronic excitation energy sets an energy scale for a band. The band shape and integrated radiative strength also depend on nuclear reorganization, thermal populations, and the coordinate dependence of the transition dipole. These contributions become especially consequential for weak transitions. A small equilibrium dipole can make a vibrationally induced amplitude dominant, and emission from a sparsely populated level can contribute disproportionately when its photon energy is higher.
 
-Franck--Condon generating functions, Duschinsky rotation, and Herzberg--Teller coupling describe the harmonic spectrum.\cite{desouza,santoro,baiardi} Applying these tools along a molecular path requires following the electronic root, transporting the sign of its transition amplitude, and checking the curvature of the reference determinant. Internal rotation and inversion also motivate an explicit treatment of active nuclear coordinates within a harmonic bath.\cite{hybriddvr}
+Generating-function and correlation-function methods already connect Franck--Condon and Herzberg--Teller amplitudes to finite-temperature spectra and rates with Duschinsky mode mixing.\cite{santoro,baiardi,desouza,desouza-phosphorescence} Hybrid discrete-variable representation (DVR) methods extend this description to large-amplitude coordinates embedded in a harmonic bath.\cite{hybriddvr} Applying these models consistently requires electronic states with continuous identity and transition amplitudes across geometries. It also requires a stopping criterion appropriate to the observable. Captured Boltzmann population measures the initial thermal ensemble, and dipole closure measures the retained unweighted strength. A small omitted fraction can still dominate the emission rate because each allowed line is weighted by the cube of its positive photon energy.
 
-PySCF ESD implements this workflow with PySCF and its optional graphics-processor backend.\cite{pyscf,gpu} It connects signed overlaps of electronic amplitudes to geometry optimization and analytic response, then carries the transition dipole into the nuclear calculation. A separable rotor treatment combines explicit large-amplitude motion with the all-quanta thermal contribution of the harmonic spectators. The molecular tests in Fig.~\ref{fig:structures} evaluate both the numerical implementation and the ability of these models to reproduce measured spectra.
+We implement PySCF ESD to connect these checks within one workflow.\cite{pyscf,gpu} Signed overlaps qualify the tracked electronic state and its optical amplitudes. Analytic derivatives of density-fitted Tamm--Dancoff states with equilibrium continuum response give matched curvatures and linear dipole slopes for supported singlet calculations. The harmonic stick solver bounds omitted positive-photon moments and expands the relevant initial or final basis. Separate prepared models handle periodic torsion, coupled inversion coordinates, and first-order spin--orbit intensity borrowing. For phosphorescence, the response includes the full occupied--virtual space and differentiates the mixed dipole analytically in the gas phase.
+
+We first isolate the effect of spectral truncation in a harmonic model with an exact thermal rate. The molecular tests in Fig.~\ref{fig:structures} then examine three distinct sources of disagreement. Benzene tests displacement and anharmonic curvature at fixed or documented optical conditions. CF$_3$NO tests how periodic nuclear motion redistributes intensity at a known offset on the absolute electronic energy scale. Naphthalene tests sensitivity to electronic state windows and to spin-vibronic intensity borrowing in fluorescence and phosphorescence separately.
 
 \benchfigure{benchmark-structures.pdf}{fig:structures}{Molecular systems in the benchmark. Panels (a)--(e) cover the systems compared with measured absorption or fluorescence profiles. Panels (f)--(i) show LiH for analytic derivative and spectral tests, formaldehyde for inversion, water for CPU/GPU agreement, and naphthalene for radiative-rate sensitivity. The quinine dication is protonated at both nitrogens.}
 
@@ -113,6 +115,24 @@ For naphthalene phosphorescence we use DF-B3LYP/def2-SVP with RKS and UKS for th
 
 \section{Results and discussion}
 
+\subsection{Population and dipole closure can miss a radiative channel}
+\label{sec:moment-test}
+
+Consider an undisplaced oscillator with equal frequencies $\omega=0.01000\,E_h$ on the two surfaces, a 0--0 gap $\Delta=0.01001\,E_h$, and a purely linear dipole $\mu(Q)=dQ$ with $d=0.01$ in atomic units. The thermal population ratio between adjacent initial levels is $r=10^{-3}$ (457.1 K). Only final levels $n\pm1$ couple to an initial level $n$. Both branches have positive photon energy in this example. If $\bar n=r/(1-r)$, the exact thermal moment of order $p$ is
+\begin{equation}
+ M_p=\frac{d^2}{2\omega}\left[
+  (\bar n+1)(\Delta-\omega)^p+\bar n(\Delta+\omega)^p
+ \right].
+ \label{eq:exact-ht-moment}
+\end{equation}
+The first term emits a photon at $\Delta-\omega$ and includes the vibrational ground level. The second emits at $\Delta+\omega$ and requires a thermally excited initial state. Its cubic energy factor outweighs its small population.
+
+Retaining only the initial vacuum captures 99.9\% of the thermal population. Final levels through two quanta capture its entire dipole strength. This basis gives a vacuum radiative rate of $1.07\times10^{-7}$~s$^{-1}$. The exact thermal rate is $0.85895$~s$^{-1}$. The energy-weighted bound rejects the initial basis, increases the initial cutoff, and yields $0.85894$~s$^{-1}$ with the default 99.5\% coverage target. This near-threshold construction tests the stopping rule in a regime where the omitted hot bands control the rate. The same criterion applies to the separate first, third, and fourth moments in the harmonic model.
+
+In a separate 0~K linear-dipole oscillator, the candidate emission line is placed at $-1$, $0$, $+1$, or $+500$~\wn. The thermal profile gives zero $M_3$ at the two nonpositive energies and reproduces the assigned-stick $M_3$ and the Gaussian centered at the line for the positive energies on both 1 and 0.5~\wn\ meshes. At 298~K, a distinct 81-mode FC+HT control requires 279\,046 overlap elements with two final quanta and 6\,724 with one for the initial vacuum and its HT overlap layer. The smaller basis meets the 99.5\% population, dipole-closure, and photon-moment targets in both directions.
+
+A two-mode transition-dipole control passes the zero-point HT test with the larger dipole error in the second eligible mode, $0.0100\,e\,\mathrm{bohr}$ against its $0.0124\,e\,\mathrm{bohr}$ tolerance. In a PBE0/STO-3G VG control on H$_2$, the single root spans the full singlet TDA space. Substituting deuterium masses in the PySCF molecule gives $\omega_{\mathrm{D}_2}/\omega_{\mathrm{H}_2}=\sqrt{m_{\mathrm H}/m_{\mathrm D}}$ to within $10^{-10}$ relative error.
+
 \subsection{Quantitative benchmarks}
 
 Table~\ref{tab:benchmarks} compares representative observables from the molecular tests. The reference in each row is identified as a measurement or a numerical control. An aligned shape probes band positions and relative intensities within its comparison window. The native energy axis and calibrated quantities probe absolute prediction.
@@ -128,11 +148,11 @@ We use archived RHF--CIS/6-31G data for a one-mode implementation check of analy
 
 For formaldehyde, extending the two-coordinate inversion model into the relaxed planar direction changes the electronic barrier evaluated at the direct saddle from 279.00 to 133.90~\wn. The lowest even--odd spacing changes from 224.65 to 211.84~\wn. Classifying the pair requires comparing the vibrational energies to a barrier that includes transverse zero-point motion. The even level lies slightly above the maximum of the corresponding transverse adiabatic potential. These numbers are from the archived RHF--CIS model.
 
+An independent LiH example exercises the default CPU DFT pipeline from a single XYZ at PBE0/def2-TZVPD and 0 K. It relaxes both states and selects a direct one-dimensional DVR with 51 electronic energy and dipole evaluations. The six retained positive-energy lines per direction reach dipole closure of 99.52\% in absorption and 99.83\% in fluorescence. The retained vacuum radiative rate is $4.3912\times10^7$~s$^{-1}$. The DVR leaves the coverage of $M_1$, $M_3$, and $M_4$ unassessed.
 
-\FloatBarrier
 \subsection{Matched CPU and GPU water benchmark}
 
-The matched water calculation uses PBE0/6-31+G* and the TDA vertical-gradient model at 298.15 K. Both backends build Coulomb and exchange directly and hold the quadrature grid fixed in the ground-state Hessian. Each yields 9,100 lines in each direction. The maximum line-position differences were $1.13\times10^{-5}$~\wn\ for absorption and $1.04\times10^{-5}$~\wn\ for emission, and the origins differed by $8.73\times10^{-6}$~\wn. The maximum differences in the excited-state gradient and ground-state Hessian were $3.64\times10^{-11}\,E_h a_0^{-1}$ and $7.04\times10^{-11}\,E_h a_0^{-2}$, respectively. All 16 prespecified numerical checks passed. The median elapsed times over three warm end-to-end runs were 21.37 s on the two-thread CPU run and 36.80 s on the RTX 4070 Laptop GPU. The timing describes a small-molecule workload on that configuration.
+The matched water calculation uses PBE0/6-31+G* and the TDA vertical-gradient model at 298.15 K. Both backends build Coulomb and exchange directly and hold the quadrature grid fixed in the $S_0$ Hessian. Each yields 9,100 lines per direction from the analytic derivatives with zero displaced geometries. The maximum line-position differences are $1.18\times10^{-5}$~\wn\ for absorption and $1.12\times10^{-5}$~\wn\ for emission. The origins differ by $8.85\times10^{-6}$~\wn. The maximum differences in the $S_1$ gradient and $S_0$ Hessian are $3.64\times10^{-11}\,E_h a_0^{-1}$ and $6.18\times10^{-11}\,E_h a_0^{-2}$, respectively. All 16 prespecified numerical checks pass. A separate GPU check on water at density-fitted PBE0/STO-3G with equilibrium C-PCM verifies that the $S_1$ Hessian reports the solvent terms and reaches completion of the mixed operator derivatives.
 
 \subsection{Benzene in \emph{n}-hexane}
 
@@ -162,6 +182,8 @@ Figure~\ref{fig:cf3no-zero} displays oscillator-strength and photon-rate densiti
 
 At 298 K the two initial thermal ensembles generate different directional spectra (Fig.~\ref{fig:cf3no-thermal}). The native PBE0 origin and absorption maximum are 13\,170.36 and 13\,668.86~\wn. The jet-cooled origin is 13\,929.70~\wn, and the room-temperature absorption maximum from the measured trace is 14\,429.60~\wn.\cite{dyet,mason,hage} The peak-to-origin intervals are 498.50 and 499.90~\wn, despite an absolute absorption offset of $-760.74$~\wn. After the specified origin alignment, the absorption peak-normalized RMS deviations across the 66 measured ordinates are 0.173 (PBE0/TDA) and 0.208 (optional SF-TDA). The calculated vacuum radiative rates are $2.37\times10^4$ and $1.19\times10^4$~s$^{-1}$. The SF-TDA calculation uses auxiliary UKS spectator curvatures. The PBE0 endpoints fail the restricted-to-unrestricted stability test, so the archived PBE0 profiles qualify the reduced nuclear calculation on those surfaces. The experimental comparison at this temperature is for absorption.
 
+Reassembling the nuclear spectra from each retained electronic input at 298~K with Gaussian FWHM 80~\wn\ reproduces the archived native-axis absorption and emission profiles. The maximum pointwise difference relative to the archived peak is $1.31\times10^{-13}$, for SF-TDA emission on the common spectral support.
+
 \benchfigure{cf3no-298k.png}{fig:cf3no-thermal}{CF$_3$NO at 298 K. The PBE0/TDA and SF-TDA curves use Gaussian FWHM 80~\wn\ (0.0099~eV). Each method uses one shift in both directions, $+759.34$~\wn\ for PBE0/TDA and $+1469.13$~\wn\ for SF-TDA. The published CAM-B3LYP AHAS absorption trace is shifted by $+971.32$~\wn\ and shown with an additional 80~\wn\ Gaussian convolution. Calculated fluorescence retains absolute photon-rate density.\cite{mason,dyet,hage}}
 
 \FloatBarrier
@@ -190,27 +212,37 @@ The measured acid-solution peaks are 3.568 and 2.716~eV on the energy-domain rep
 
 
 \FloatBarrier
-\subsection{Radiative-rate sensitivity in naphthalene}
+\subsection{Singlet intensity borrowing in naphthalene fluorescence}
 
-A 298 K fluorescence calculation in cyclohexane tests intensity borrowing between $^1L_b$ and $^1L_a$. With 47 harmonic spectators, the B3LYP5 one-promoter linear model gives $2.01\times10^8$~s$^{-1}$, and the explicit two-state nuclear model gives $2.27\times10^7$~s$^{-1}$ for the $^1L_b$-connected manifold. Substituting $\omega$B97X energies and dipoles at the same geometries increases the center gap from 28.09 to 208.38~meV and reduces the rate to $6.87\times10^6$~s$^{-1}$, compared with approximately $2.40\times10^6$~s$^{-1}$ measured.\cite{desouza}
+Previous work established the sensitivity of naphthalene photophysics to Herzberg--Teller terms.\cite{manian} Here a 298 K fluorescence calculation in cyclohexane tests the dependence of intensity borrowing on the treatment of the two low-lying singlets, $^1L_b$ and $^1L_a$. With 47 harmonic spectators, the B3LYP5 one-promoter linear model gives $2.01\times10^8$~s$^{-1}$, and the explicit two-state nuclear model gives $2.27\times10^7$~s$^{-1}$ for the $^1L_b$-connected manifold. Substituting $\omega$B97X energies and dipoles at the same geometries increases the center gap from 28.09 to 208.38~meV and reduces the rate to $6.87\times10^6$~s$^{-1}$, compared with approximately $2.40\times10^6$~s$^{-1}$ measured.\cite{desouza}
+
+\subsection{Spin--orbit intensity borrowing in naphthalene phosphorescence}
+
+\benchfigure{../benchmarks/naphthalene-phosphorescence.png}{fig:naphthalene-phosphorescence}{Naphthalene phosphorescence at 77 K, with the ring-mode region enlarged below. The gas and C-PCM Condon profiles share a Gaussian FWHM of 0.0186~eV (150~\wn), also used for gas-phase analytic HT. The ordinate is peak-normalized reduced intensity. Photon energy loss is measured from each profile's own observed or computed 0--0 origin. The hydrocarbon-glass trace is digitized from Fig.~S2 of Velardo \emph{et al.}\cite{velardo}}
+
+Earlier calculations on polyacenes reported a strong dependence of phosphorescence lifetime and polarization on the number of intermediate states.\cite{pedash} Photoselection experiments at 77 K also established the perpendicular polarization of naphthalene phosphorescence.\cite{catalan} We use these observations to test whether full-space TDA response recovers the channel and to quantify the additional effect of the analytic spin-vibronic derivative.
+
+A response residual measures how well the solution satisfies the linear equation for its specified source. In a constructed singlet response block with a zero eigenvalue, the optical right-hand side is orthogonal to the singular direction. The optical solve returns a zero residual even though the spin--orbit source couples to that direction. The independent spectral test rejects this model. The check detects singular denominators outside the optical response directions. The weak-coupling approximation separately requires small spin--orbit matrix elements relative to the relevant separations.
 
 For phosphorescence at 77 K the 12-singlet, 12-triplet gas-phase Condon model gives $2.603\times10^{-3}$~s$^{-1}$. Including all 4\,964 spatial occupied--virtual configurations per spin raises the rate to $0.05676$~s$^{-1}$ (17.62~s), with 94.61\% polarized perpendicular to the molecular plane. Higher configurations of opposite reflection symmetry contribute through both mixing channels in Eq.~\eqref{eq:full-space-soc}. Gas-phase analytic HT increases the rate by 13.4\% to $0.06437$~s$^{-1}$ (15.54~s), with 88.49\% perpendicular polarization. The C-PCM Condon control shifts the calculated 0--0 energy from 2.5545 to 2.5568~eV. It gives $0.05702$~s$^{-1}$ using the gas-phase moment on the continuum surfaces and $0.06312$~s$^{-1}$ (15.84~s) when the moment also includes the continuum response. All computed rates use the vacuum prefactor. The reported radiative lifetime in ethanol at 77 K is 75~s.\cite{langelaar} The polar-medium rate in Table S1 of de Souza \emph{et al.} corresponds to 19.3~s.\cite{desouza-phosphorescence} These reference lifetimes apply to media distinct from the hydrocarbon glass used for the spectral comparison.
 
 In Fig.~\ref{fig:naphthalene-phosphorescence} the gas and C-PCM Condon profiles both show two maxima near 1\,430 and 1\,630~\wn\ of energy loss. The gas-phase HT profile retains the pair. For emission from the gas-phase vibrational ground level of $T_1$, the $S_0$ fundamentals at 1\,421.5 and 1\,628.7~\wn, both of $A_g$ symmetry, account for about 93\% and 91\% of the respective Condon peak heights. The experimental Raman spectrum places totally symmetric lines at 1\,381 and 1\,579~\wn\ and assigns the nearby 1\,629~\wn\ line to $B_{3g}$.\cite{ohta-ito} The digitized 77 K glass trace has a broad band centered near 1\,491~\wn\ of energy loss. Using the independently read 239~\wn\ FWHM of the measured 0--0 peak as a Gaussian FWHM merges the gas-phase HT pair into one maximum near 1\,595~\wn. The broader profile illustrates the effect of resolution and leaves a discrepancy in the band position.
 
-\benchfigure{../benchmarks/naphthalene-phosphorescence.png}{fig:naphthalene-phosphorescence}{Naphthalene phosphorescence at 77 K, with the ring-mode region enlarged below. The gas and C-PCM Condon profiles share a Gaussian FWHM of 0.0186~eV (150~\wn), also used for gas-phase analytic HT. The ordinate is peak-normalized reduced intensity. Photon energy loss is measured from each profile's own observed or computed 0--0 origin. The hydrocarbon-glass trace is digitized from Fig.~S2 of Velardo \emph{et al.}\cite{velardo}}
+\subsection{Implications for model selection}
 
-\clearpage
+The numerical and molecular controls diagnose different failures. The oscillator example calls for expansion of the initial thermal basis and leaves the electronic and nuclear Hamiltonians fixed. Benzene calls for an improved description of the relaxed displacement and selected anharmonic modes. In CF$_3$NO, sampling a complete torsional path changes the structure of the band, while the native offset and restricted-reference instability remain electronic limitations. The simulated naphthalene polarization depends strongly on the extent of the spin--orbit response space. Broadening the spectrum to the measured glass linewidth obscures a calculated splitting and leaves the band center displaced.
+
+Agreement after alignment assesses the redistribution of intensity at the stated width. Native band positions constrain the electronic and vibronic energy scale, and calibrated strengths constrain the magnitude of the optical response. The moment bounds quantify vibrational truncation conditional on the electronic surfaces and on the harmonic, linear-dipole model. The analytic singlet route assumes an isolated state and a compatible density-fitted continuum model. The analytic spin-vibronic derivatives use first-order spin--orbit coupling in the gas phase and require spin--orbit matrix elements small relative to the relevant energy separations.
+
+\FloatBarrier
 \section{Conclusions}
 
-PySCF ESD connects electronic-state tracking to vibronic absorption, fluorescence, phosphorescence, and radiative rates. Its prepared density-fitted TDA route calculates the excited-state Hessian and transition-dipole derivatives analytically for isolated singlet roots with equilibrium continuum response. First-order spin--orbit response includes intensity borrowing across the full TDA configuration space and supplies analytic gas-phase derivatives of the phosphorescence moment. The nuclear solver carries the transition moment into the spectrum and reports the population and dipole-strength coverage of the vibrational basis.
-
-The CF$_3$NO periodic rotor recovers the low-frequency progression and reproduces the energy interval from the origin to the absorption maximum within 1.40~\wn. In benzene, changing the breathing displacement brings the fluorescence peak-height ratio from 1.013 to 0.754, close to the measured 0.688. Treating anharmonic curvature separately improves the full fluorescence envelope. For naphthalene the analytic HT correction and the continuum Condon control each increase the 77 K phosphorescence rate and preserve the pair of ring-mode peaks at the shared linewidth. The wider Gaussian taken from the measured 0--0 band merges the peaks in the gas-phase HT profile and leaves the band position discrepant.
+PySCF ESD connects signed electronic-state tracking and analytic response for supported electronic models to vibronic spectra and radiative rates. Bounds on positive-photon moments give separate stopping criteria for harmonic absorption strength, emission rate, and radiant power. The molecular controls identify when periodic motion or altered curvatures redistribute a progression and when additional electronic response channels control intensity. These distinctions guide the calculation from the choice of electronic surface and nuclear model to convergence of the observable used in the experimental comparison.
 
 \pdfbookmark[1]{Code and data availability}{availability}
 \section*{Code and data availability}
 
-The \href{https://github.com/HenriqueCSJ/PySCF_ESD}{PySCF ESD repository} contains the package, tests, example drivers, manuscript source, and plotted comparisons. The Python package is licensed under GPL-3.0-only. The computed naphthalene profiles and diagnostics are in \nolinkurl{docs/benchmarks/naphthalene/}. The examples use retained electronic inputs and the measured data cited with each figure. Repeating the archived calculations requires the corresponding numerical checkpoints and spectral inputs. The historical plots retain their original units and comparison parameters, which are stated in the captions.
+The \href{https://github.com/HenriqueCSJ/PySCF_ESD}{PySCF ESD repository} contains the GPL-3.0-only implementation, regression tests, example drivers, manuscript source, and plotted comparisons. The \href{https://github.com/HenriqueCSJ/PySCF_ESD/tree/49511495e1cf3cd60a4b861e2070251c5614f10d}{implementation revision evaluated here} includes the test for Eq.~\eqref{eq:exact-ht-moment} and the XYZ command for the default LiH check. The computed naphthalene profiles, assignments, and solvent diagnostics are available under \nolinkurl{docs/benchmarks/naphthalene/}. Repeating the other archived molecular comparisons requires the corresponding retained electronic checkpoints or digitized spectral inputs. The captions give the comparison settings and cite the measured spectra.
 
 \clearpage
 \pdfbookmark[1]{References}{references}
@@ -218,9 +250,10 @@ The \href{https://github.com/HenriqueCSJ/PySCF_ESD}{PySCF ESD repository} contai
 \small
 \begin{thebibliography}{99}
 
-\bibitem{desouza} B. de Souza, F. Neese, and R. Izs\'ak, J. Chem. Phys. \textbf{148}, 034104 (2018). \doi{10.1063/1.5010895}.
 \bibitem{santoro} F. Santoro, R. Improta, A. Lami, J. Bloino, and V. Barone, J. Chem. Phys. \textbf{126}, 084509 (2007). \doi{10.1063/1.2437197}.
 \bibitem{baiardi} A. Baiardi, J. Bloino, and V. Barone, J. Chem. Theory Comput. \textbf{9}, 4097--4115 (2013). \doi{10.1021/ct400450k}.
+\bibitem{desouza} B. de Souza, F. Neese, and R. Izs\'ak, J. Chem. Phys. \textbf{148}, 034104 (2018). \doi{10.1063/1.5010895}.
+\bibitem{desouza-phosphorescence} B. de Souza, G. Farias, F. Neese, and R. Izs\'ak, J. Chem. Theory Comput. \textbf{15}, 1896--1904 (2019). \doi{10.1021/acs.jctc.8b00841}.
 \bibitem{hybriddvr} A. Baiardi, J. Bloino, and V. Barone, J. Chem. Theory Comput. \textbf{13}, 2804--2822 (2017). \doi{10.1021/acs.jctc.7b00236}.
 \bibitem{pyscf} Q. Sun \emph{et al.}, J. Chem. Phys. \textbf{153}, 024109 (2020). \doi{10.1063/5.0006074}.
 \bibitem{gpu} R. Li, Q. Sun, X. Zhang, and G. K.-L. Chan, J. Phys. Chem. A \textbf{129}, 1459--1468 (2025). \doi{10.1021/acs.jpca.4c05876}.
@@ -231,9 +264,12 @@ The \href{https://github.com/HenriqueCSJ/PySCF_ESD}{PySCF ESD repository} contai
 \bibitem{cpcm} M. Cossi, N. Rega, G. Scalmani, and V. Barone, J. Comput. Chem. \textbf{24}, 669--681 (2003). \doi{10.1002/jcc.10189}.
 \bibitem{liangtda} J. Liu and W. Liang, J. Chem. Phys. \textbf{135}, 014113 (2011). \doi{10.1063/1.3605504}.
 \bibitem{liangpcm} J. Liu and W. Liang, J. Chem. Phys. \textbf{138}, 024101 (2013). \doi{10.1063/1.4773397}.
+\bibitem{somf} S. Kotaru, P. Pokhilko, and A. I. Krylov, J. Chem. Phys. \textbf{157}, 224110 (2022). \doi{10.1063/5.0130868}.
+\bibitem{pygraso} M. Hagai, K. J. Fujimoto, and T. Yanai, J. Chem. Theory Comput. \textbf{21}, 11604--11619 (2025). \doi{10.1021/acs.jctc.5c01442}.
 \bibitem{dvr} J. C. Light, I. P. Hamilton, and J. V. Lill, J. Chem. Phys. \textbf{82}, 1400--1409 (1985). \doi{10.1063/1.448462}.
 \bibitem{longuethiggins} H. C. Longuet-Higgins, Proc. R. Soc. Lond. A \textbf{344}, 147--156 (1975). \doi{10.1098/rspa.1975.0095}.
 \bibitem{huhberger} J. Huh and R. Berger, Sci. Rep. \textbf{7}, 17561 (2017). \doi{10.1038/s41598-017-17506-8}.
+\bibitem{velardo} A. Velardo, R. Borrelli, A. Peluso, and A. Capobianco, J. Phys. Chem. C \textbf{120}, 24605--24614 (2016). \doi{10.1021/acs.jpcc.6b07709}.
 \bibitem{mason} J. Mason and J. Banus, J. Chem. Soc., 3904 (1957). \doi{10.1039/JR9570003904}.
 \bibitem{dyet} J. A. Dyet, M. R. S. McCoustra, and J. Pfab, J. Chem. Soc., Faraday Trans. 2 \textbf{84}, 463--482 (1988). \doi{10.1039/F29888400463}.
 \bibitem{laane} P. Boopalachandran and J. Laane, Chem. Phys. Lett. \textbf{462}, 178--182 (2008). \doi{10.1016/j.cplett.2008.07.080}.
@@ -247,11 +283,10 @@ The \href{https://github.com/HenriqueCSJ/PySCF_ESD}{PySCF ESD repository} contai
 \bibitem{yamazaki} I. Yamazaki and H. Baba, J. Chem. Phys. \textbf{66}, 5826--5827 (1977). \doi{10.1063/1.433862}.
 \bibitem{wang} Y. Wang, J. Ren, W. Li, and Z. Shuai, J. Phys. Chem. Lett. \textbf{13}, 6391--6399 (2022). \doi{10.1021/acs.jpclett.2c01475}.
 \bibitem{quininecrystal} G. I. Anderson, S. Bellia, M. Zeller, P. C. Hillesheim, and A. Mirjafari, IUCrData \textbf{6}, x210406 (2021). \doi{10.1107/S2414314621004065}.
-\bibitem{somf} S. Kotaru, P. Pokhilko, and A. I. Krylov, J. Chem. Phys. \textbf{157}, 224110 (2022). \doi{10.1063/5.0130868}.
-\bibitem{pygraso} M. Hagai, K. J. Fujimoto, and T. Yanai, J. Chem. Theory Comput. \textbf{21}, 11604--11619 (2025). \doi{10.1021/acs.jctc.5c01442}.
-\bibitem{velardo} A. Velardo, R. Borrelli, A. Peluso, and A. Capobianco, J. Phys. Chem. C \textbf{120}, 24605--24614 (2016). \doi{10.1021/acs.jpcc.6b07709}.
+\bibitem{manian} A. Manian and S. P. Russo, Sci. Rep. \textbf{12}, 21481 (2022). \doi{10.1038/s41598-022-24081-0}.
+\bibitem{pedash} Yu. F. Pedash, O. V. Prezhdo, S. I. Kotelevskiy, and V. V. Prezhdo, J. Mol. Struct. THEOCHEM \textbf{585}, 49--59 (2002). \doi{10.1016/S0166-1280(02)00035-0}.
+\bibitem{catalan} J. Catal\'an, Chem. Phys. \textbf{316}, 253--259 (2005). \doi{10.1016/j.chemphys.2005.04.047}.
 \bibitem{langelaar} J. Langelaar, R. P. H. Rettschnick, and G. J. Hoijtink, J. Chem. Phys. \textbf{54}, 1--7 (1971). \doi{10.1063/1.1674576}.
-\bibitem{desouza-phosphorescence} B. de Souza, G. Farias, F. Neese, and R. Izs\'ak, J. Chem. Theory Comput. \textbf{15}, 1896--1904 (2019). \doi{10.1021/acs.jctc.8b00841}.
 \bibitem{ohta-ito} N. Ohta and M. Ito, Chem. Phys. \textbf{20}, 71--81 (1977). \doi{10.1016/0301-0104(77)85115-X}.
 
 \end{thebibliography}

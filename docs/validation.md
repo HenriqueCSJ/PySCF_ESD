@@ -21,17 +21,19 @@ python examples/validate_water_cpu.py water-validation --threads 2 --stencil
 
 ## Water CPU and GPU
 
-The CPU example computes a fresh water reference and compares analytic gradients with validation stencils and cold independent displacements. Its `reference.json` is an input to the GPU comparison. Use a fresh output directory for the CPU benchmark.
+The CPU example computes a fresh water reference for the GPU comparison. Use a fresh output directory for the CPU run. The optional `--stencil` flag checks the analytic gradient against independent displaced points.
 
 ```sh
-python examples/validate_water_gpu.py water-validation/reference.json water-gpu-report.json --threads 2 --repeats 3
+python examples/validate_water_gpu.py water-validation/reference.json water-gpu-report.json --threads 2 --repeats 1
 ```
 
-The matched analytic VG run on the RTX 4070 Laptop GPU passed 16 acceptance checks with zero displaced production geometries. It gave maximum CPU–GPU differences of 3.64×10⁻¹¹ Hartree/bohr in the S₁ gradient and 7.04×10⁻¹¹ Hartree/bohr² in the S₀ Hessian. The largest assigned-line differences were 1.13×10⁻⁵ cm⁻¹ in absorption and 1.04×10⁻⁵ cm⁻¹ in emission. The CPU S₁ response residual was 8.51×10⁻¹¹ at the requested 10⁻¹⁰ tolerance. The warmed three-repeat medians were 21.37 s on the two-thread CPU route and 36.80 s on GPU. This is one small-molecule, matched-model result. In a separate instrumented run, SCF/TDA setup and validation and orbital stability checks accounted for about 89% of the additional GPU time. [CPU driver](../examples/validate_water_cpu.py) · [GPU driver](../examples/validate_water_gpu.py)
+The matched analytic VG rerun on PySCF 2.15.0 and GPU4PySCF 1.9.2 used PBE0/6-31+G*, grid level 5, five roots, and a retained ground-state geometry. At 298.15 K the RTX 4070 Laptop GPU and CPU passed all 16 checks with zero displaced production geometries and 9,100 assigned lines per direction. The maximum CPU–GPU differences were 3.64 × 10⁻¹¹ Hartree/bohr for the S₁ gradient and 6.18 × 10⁻¹¹ Hartree/bohr² for the S₀ Hessian. The largest assigned-line differences were 1.18 × 10⁻⁵ cm⁻¹ in absorption and 1.12 × 10⁻⁵ cm⁻¹ in emission. The GPU uses the native direct RKS Fock builder for the residual check. A separate GPU water integration test exercises the analytic equilibrium C-PCM S₁ Hessian with a progress callback. [CPU driver](../examples/validate_water_cpu.py) · [GPU driver](../examples/validate_water_gpu.py) · [C-PCM test](../tests/test_molecular_tda_hessian.py)
+
+In the earlier water run, the CPU S₁ response residual was 8.51 × 10⁻¹¹ at the requested 10⁻¹⁰ tolerance. The warmed three-repeat medians for that configuration were 21.37 s on two CPU threads and 36.80 s on the RTX 4070 Laptop GPU. The accuracy rerun above used one warm repeat per backend.
 
 ## CPU default from XYZ
 
-The CPU `auto` workflow completed LiH from the XYZ below with the default PBE0/def2-TZVPD, first singlet and 0 K. It optimized both minima, tracked the electronic state and dipole phase, and selected the direct diatomic DVR. The scan used 51 direct energy and dipole evaluations. Absorption and emission each produced six positive-energy sticks, with final dipole-strength coverage of 99.52% and 99.83%, respectively. The harmonic moment bounds do not cover this direct anharmonic model. Its numerical report labels M1, M3 and M4 `unassessed` and provides the sums over the retained sticks.
+The CPU `auto` workflow completed LiH from the XYZ below with the default PBE0/def2-TZVPD, first singlet and 0 K. It optimized both minima, tracked the electronic state and dipole phase, and selected the direct diatomic DVR. The scan used 51 direct energy and dipole evaluations. Absorption and emission each produced six positive-energy sticks, with final dipole-strength coverage of 99.52% and 99.83%, respectively. The retained lines give a vacuum radiative rate of 4.3912 × 10⁷ s⁻¹. Its numerical report labels M1, M3 and M4 `unassessed` for this DVR model.
 
 ```sh
 cat > lih.xyz <<'EOF'
@@ -71,6 +73,8 @@ Use the retained AH, planar and volume electronic arrays. The latter include dir
 ## CF₃NO at 298 K
 
 The benchmark replay defaults to the earlier PBE0/TDA model with a separate periodic rotor and 11 harmonic spectators. Use `--method sf-tda` for the alternative with SF-TDA torsional cuts and auxiliary UKS spectator force constants. Both replays use retained electronic inputs, 298 K and Gaussian FWHM 80 cm⁻¹ on the calculated energy axis. The first argument is the calculation archive containing both benchmark runs.
+
+The PBE0/TDA rerun reproduced absorption and emission to within 3.36 × 10⁻¹⁴ and 2.00 × 10⁻¹⁴ of their archived peak intensities. The SF-TDA numerical rerun reproduced the two profiles to within 7.83 × 10⁻¹⁴ and 1.31 × 10⁻¹³ of their archived peak intensities over common support.
 
 ```sh
 python examples/replay_cf3no_thermal.py /path/to/calculation/archive --output cf3no-pbe0

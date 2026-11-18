@@ -58,10 +58,14 @@ maximizes $|s_k|$ and multiplies the selected $X_k$ and its dipole by
 $\operatorname{sgn}(s_k)$. The minimum score magnitude is 0.65. With
 multiple roots, the automatic workflow also requires a margin of at
 least 0.10 over the runner-up and a gap of at least $10^{-4}\,E_h$ to
-the closest computed neighbor. It
-expands the root window on insufficient overlap or a match at its upper
-edge, within a bounded search. A trial that changes the energy rank of
-the tracked root is rejected in the isolated adiabatic model.
+the closest computed neighbor. It expands a truncated root window on
+insufficient overlap or a match at its upper edge, within a bounded
+search. For VG, the upper edge is admissible when the solved roots span
+the full occupied--virtual space. A one-root calculation qualifies
+as complete only when that space is one-dimensional. It retains the
+eigenpair checks and, when matching a displaced point, the overlap check.
+A trial that changes the energy rank of the tracked root is rejected in
+the isolated adiabatic model.
 
 \subsection{Stationary geometries and local derivative fits}
 \label{sec:electronic-geometry}
@@ -109,12 +113,20 @@ in that subspace. Independent displacements test both the predicted
 gradients and the quadratic energy expansion. First-order
 Herzberg--Teller (HT) slopes are fitted to signed dipole differences
 in ground-state normal coordinates and checked on independent points.
-Each fit can be attempted at successively smaller radii. For HT, when
-the vibrational quantum of the dominant dipole-active mode reaches
-the neighboring electronic gap and its predicted dipole change is
-resolvable, direct calculations at both signed zero-point displacements
-also test the linear expansion. The workflow requires these checks to
-pass before using the derivative model. The explicitly selected
+Each fit can be attempted at successively smaller radii. Let $\delta$
+be the energy gap to the closest computed electronic neighbor at the
+ground-state minimum. The workflow tests every mode $k$ for which
+$\omega_k\ge\delta$ and
+$\|\mathbf d_k\|/\sqrt{2\omega_k}\ge 2\times10^{-6}\,e\,\mathrm{bohr}$,
+where $\omega_k$ is the vibrational quantum and $\mathbf d_k$ is the
+fitted dipole derivative in the mass-weighted normal coordinate.
+It tracks the same electronic state at the two
+zero-point displacements $Q_k=\pm(2\omega_k)^{-1/2}$. The larger error
+between the signed dipole changes and their linear predictions must be
+at most $2\times10^{-6}\,e\,\mathrm{bohr}$ plus 6.5\% of the larger
+observed dipole change in norm. The derivative model requires every
+eligible mode to pass this test and reports the largest absolute dipole
+error with the corresponding mode and tolerance. The explicitly selected
 vertical-gradient (VG) model instead uses the ground-state Hessian and
 the excited-state gradient at the ground-state minimum to construct
 two wells of equal curvature with a constant transition dipole.
@@ -170,6 +182,9 @@ the ground-state reaction field and of the response to the
 transition density. The semilocal exchange--correlation terms
 differentiate both the grid nodes and weights and include functional
 derivatives through fourth order.
+
+The optional progress callback reports the fixed-density solvent terms in
+C-PCM and continues through the mixed operator derivatives.
 
 The projected solves check the eigenpair residual and separation of
 the target from neighboring roots and verify each response residual.
@@ -257,9 +272,37 @@ With all occupied--virtual arrays flattened in the contractions,
 \end{align}
 The two amplitudes describe singlet admixture into the emitting triplet
 and triplet admixture into the ground singlet. The common permanent
-dipole cancels between the two state responses. The shifted operators
-must be positive, and the response solves span the full finite
-occupied--virtual space without explicit enumeration of its roots.
+dipole cancels between the two state responses. The response solves span
+the full finite occupied--virtual space without explicit enumeration
+of its roots and use a default relative residual tolerance of $10^{-8}$.
+Convergence within the response space sampled by a dipole or SOC source
+can miss a low eigenvalue in a symmetry sector orthogonal to that source.
+Separate spectral checks use dense diagonalization for
+small spaces and residual-checked matrix-free Davidson solves from
+independent full-support trial vectors for larger spaces. Agreement
+between the latter estimates supplies numerical evidence for the low
+spectral edge. The first-order model additionally assumes spin--orbit
+matrix elements small relative to the relevant energy separations.
+
+For $q=\operatorname{vec}(Q)$ and $\varepsilon=10^{-7}\,E_h$, the target
+residual $r=\|A_Tq-E_Tq\|_2$ must be at most $\varepsilon$ and the lowest
+eigenvalue of $B_S$ must exceed $\varepsilon+r$. The Condon calculation
+also requires the lowest eigenvalue of $A_T$ to exceed $\varepsilon$.
+The derivative calculation requires the lowest spatial triplet,
+separated from the other spatial triplets by more than $10^{-5}\,E_h$.
+Write $P=I-qq^{\mathsf T}$, $\rho=q^{\mathsf T}A_Tq$ and
+$c=\|PA_Tq\|_2$. For the numerical target the tests require
+\begin{equation}
+ \rho-c>\varepsilon,\qquad
+ \lambda_{\min}\!\left(\left.P(A_T-E_T I)P\right|_{q^\perp}\right)
+ >10^{-5}\,E_h+|\rho-E_T|+2c .
+ \label{eq:soc-spectral-check}
+\end{equation}
+Removing the coupling between $q$ and its complement shifts each
+ordered triplet eigenvalue by at most $c$. The projected test uses
+this bound to account for the target residual when checking the gap.
+An unresolved spectral check prevents evaluation of the corresponding
+response.
 
 For a mass-weighted triplet normal coordinate $s$, differentiating the
 response equations gives the first-order HT coefficient

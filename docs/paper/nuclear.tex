@@ -4,7 +4,9 @@ On surface $s$, the harmonic Hamiltonian in mass-weighted normal coordinates
 $Q_s$ is $H_s=E_s^{\min}+\tfrac12\sum_k(-\partial_{Q_{sk}}^2+\omega_{sk}^2 Q_{sk}^2)$
 in atomic units. Here $E_s^{\min}$ is the electronic minimum, $Q_s$ is in
 $\sqrt{m_e}\,\mathrm{bohr}$, and $\omega_{sk}$ denotes a vibrational energy
-quantum in Hartree. In the adiabatic Hessian (AH) model, the two Hessians
+quantum in Hartree. For a PySCF molecule, the workflow uses its atomic
+masses in atom order, including isotope assignments, unless explicit
+masses are supplied. In the adiabatic Hessian (AH) model, the two Hessians
 give separate frequencies and normal modes. After mass-weighted alignment
 and removal of rigid motions, the orthogonal polar factor of the mode
 overlap gives the Duschinsky matrix $J$ in $Q_f=JQ_i+K$. Projecting the
@@ -64,7 +66,7 @@ total-quanta cutoff can be filled in order of increasing excitation.
 
 \subsection{Dipoles, populations, and optical strengths}
 
-The constant and first-order terms of the real Cartesian length-gauge
+The constant and first-order terms of the Cartesian length-gauge
 dipole give the Franck--Condon (FC) and Herzberg--Teller (HT) amplitudes,
 respectively. For a dipole $\boldsymbol\mu_i$ in $e\,\mathrm{bohr}$ at the
 initial origin, define $\mathbf d_k=\partial_{Q_{ik}}\boldsymbol\mu$ there.
@@ -83,8 +85,8 @@ so the complete linear amplitude is
 \end{equation}
 The FC and HT vectors interfere before the Cartesian components are
 squared and summed. Both terms must use the same electronic phase and
-Cartesian frame. A global sign leaves $S$ invariant, whereas inconsistent
-signs between the dipole and its derivatives change the interference.
+Cartesian frame. A common phase leaves $S$ invariant. The relative
+phase of the dipole and its derivatives controls the interference.
 The derivative rows use the signs and order of the chosen normal modes.
 For a single ground-endpoint expansion reused in emission, take
 $Q_e=JQ_g+K$ in the absorption convention. With $D_g$ the matrix whose rows
@@ -93,11 +95,12 @@ $D_e=JD_g$ and $\boldsymbol\mu_e=\boldsymbol\mu_g-D_g^{\mathsf T}J^{\mathsf T}K$
 for that same linear function. Prepared spectra may use independent dipole
 expansions evaluated at the two initial endpoints.\cite{baiardi}
 
-Positive photon energies are $E_\gamma=\eta(\Delta_{00}+
+The signed photon energy is $E_\gamma=\eta(\Delta_{00}+
 \mathbf m\cdot\boldsymbol\omega_f-\mathbf n\cdot\boldsymbol\omega_i)$,
-with $\eta=+1$ for absorption and $\eta=-1$ for fluorescence, for which
-the excited surface is initial. At temperature $T>0$, the initial
-occupation carries $p_{\mathbf n}=\exp(-\beta\,\mathbf n\cdot\boldsymbol\omega_i)
+with $\eta=+1$ for absorption and $\eta=-1$ for emission, for which
+the excited surface is initial. Optical lines require $E_\gamma>0$.
+At temperature $T>0$, the initial occupation carries
+$p_{\mathbf n}=\exp(-\beta\,\mathbf n\cdot\boldsymbol\omega_i)
 \prod_k(1-e^{-\beta\omega_{ik}})$ with $\beta=(k_{\mathrm B}T)^{-1}$.
 This uses the full harmonic partition function. At 0~K only the initial
 vacuum is occupied. For population coverage the assigned-stick solver
@@ -108,9 +111,6 @@ for the same initial states, both before the positive-energy cut. The
 closure for each $\mathbf n$ is
 $\|\boldsymbol\mu_i\|^2+\sum_k\|\mathbf d_k\|^2(2n_k+1)/(2\omega_{ik})$,
 from the initial number-state expectation of $\|\boldsymbol\mu(Q_i)\|^2$.
-The automatic workflow increases the two cutoffs separately to a default
-target of 99.5\% for both coverages and reports when a basis ceiling
-prevents reaching the target.
 
 For $E_\gamma$ in Hartree and $S$ in squared atomic units, the dimensionless
 absorption oscillator strength and the vacuum spontaneous emission rate are
@@ -128,6 +128,78 @@ joules converts photon rate to radiant power. For absorption per unit
 wavenumber, the oscillator-strength density gives the cross section on
 multiplication by $\pi r_e$, where $r_e$ is the classical electron radius
 in cm.
+
+\subsection{Bounds for integrated harmonic observables}
+
+The population and dipole closure tests precede photon weighting.
+The corresponding positive-photon moments of the harmonic model are
+\begin{equation}
+ M_k=\sum_{\mathbf n,\mathbf m}p_{\mathbf n}S_{\mathbf m\mathbf n}
+       [E_\gamma]_+^k,\qquad [x]_+=\max(0,x).
+ \label{eq:harmonic-photon-moments}
+\end{equation}
+The absorption oscillator-strength sum is proportional to $M_1$,
+the radiative rate to $M_3$, and the radiant power to $M_4$.
+The finite stick basis yields $M_k^{\mathrm{ret}}$. With upper bounds
+$U_{i,k}$ for contributions from omitted initial states and $U_{f,k}$
+for omitted final states reached from retained initial states, the
+coverage is bounded below by
+\begin{equation}
+ \frac{M_k^{\mathrm{ret}}}{M_k^{\mathrm{ret}}+U_{i,k}+U_{f,k}}
+ \label{eq:harmonic-moment-coverage}
+\end{equation}
+for a positive denominator.
+
+For emission, set $E_{\mathbf n}=\mathbf n\cdot\boldsymbol\omega_i$ and
+let $C_{\mathbf n}=\langle\|\boldsymbol\mu(Q_i)\|^2\rangle_{\mathbf n}$
+be the full dipole closure in initial level $\mathbf n$. An omitted
+final level above a total-quanta cutoff $N_f$ has excitation energy
+of at least $(N_f+1)\min_j\omega_{fj}$. Thus its positive photon
+energy is at most
+$[E_{\mathbf n}-\Delta_{00}-(N_f+1)\min_j\omega_{fj}]_+$.
+For each retained initial level, the $k$th power of this ceiling
+multiplies the unrepresented dipole strength
+$C_{\mathbf n}-\sum_{\mathbf m\ {\rm retained}}S_{\mathbf m\mathbf n}$.
+The population-weighted sum gives the final-state bound. For omitted
+initial levels, $E_{\mathbf n}+[-\Delta_{00}]_+$ bounds the positive
+photon energy to every final level. The corresponding bound is the
+thermal average of $C_{\mathbf n}(E_{\mathbf n}+[-\Delta_{00}]_+)^k$
+over the full oscillator ensemble minus its retained initial terms.
+The full average follows from the independent geometric mode
+occupations and the affine dependence of $C_{\mathbf n}$ on their
+occupation numbers.
+
+For absorption, final-state closure gives the signed first moment
+at fixed $\mathbf n$,
+\begin{equation}
+ \sum_{\mathbf m} E_\gamma S_{\mathbf m\mathbf n}
+ = \bigl\langle\|\boldsymbol\mu(Q_i)\|^2 (V_f-V_i)\bigr\rangle_{\mathbf n}
+   +\tfrac12\sum_j\|\mathbf d_j\|^2 .
+ \label{eq:harmonic-signed-first-moment}
+\end{equation}
+Here $V_i$ and $V_f$ include the respective electronic minima and
+harmonic potentials expressed in the same initial coordinates. The
+last term comes from the common kinetic operator acting on the affine
+dipole. The signed contributions of each omitted set follow by
+subtracting retained sums from the corresponding analytic closure,
+using Gaussian coordinate averages for the full thermal ensemble.
+The positive first moment equals the signed first moment plus the
+magnitude of its negative-energy part. The same energy ceilings as
+for emission bound that negative part at $k=1$. Adding those bounds
+to the signed contributions gives $U_{i,1}$ and $U_{f,1}$.
+
+The numerical bounds include allowances for roundoff in differences
+of totals and retained contributions. The adaptive harmonic stick
+solver increases the two quanta cutoffs until the population, dipole
+closure when defined, and photon-moment coverages meet the target
+(99.5\% by default), or reports the unmet criterion. If the overlap
+budget blocks further growth, the solver searches the affordable basis
+pairs using the largest feasible final cutoff for each initial cutoff
+that can meet the population target. For finite-temperature HT it counts
+the extra initial overlap layer needed for coordinate insertion. These bounds
+concern integrated observables within the chosen harmonic and dipole
+model. Individual band strengths and broadened peak positions require
+their own convergence checks.
 
 \subsection{Selected anharmonic coordinates}
 
@@ -288,17 +360,22 @@ and recovers thermal dipole closure at $t=0$. The spectator-independent
 rotor convolution uses the FC contraction in Eq.~\eqref{eq:thermal-characteristic}.
 \cite{huhberger,baiardi}
 
-The numerical profile multiplies the active and harmonic transforms and
-then applies the positive-energy cut and the $E_\gamma$ or $E_\gamma^3$
-weight. Cutting the two measures separately would discard contributions
-that combine to give positive photon energies. For a nontrivial harmonic
-measure, the calculation uses a Fourier mesh in wavenumber, a two-sided
+For equal, undisplaced harmonic surfaces the Condon origin and the
+linear HT sidebands give the thermal lines directly. The solver selects
+positive photon energies, weights them by $E_\gamma$ or $E_\gamma^3$,
+and centers the Gaussians at the exact line energies.
+In the general Fourier calculation, the active and harmonic transforms
+are multiplied before imposing the positive-energy cut and photon
+weight so that the cutoff acts on the combined energy. The calculation
+uses a Fourier mesh in wavenumber, a two-sided
 exponential-moment bound on the underlying dipole measure, and a narrow
 auxiliary Gaussian of standard deviation twice the mesh spacing. To weight
 the original energies, $(u+\sigma_{\rm aux}^2\partial_u)^p$ acts on the
 auxiliary-smoothed density, with $p=1$ or $3$. Here $u$ and $\sigma_{\rm aux}$
 are in the same wavenumber units, and the result is converted to Hartree
 weighting. The remaining Gaussian variance is the requested physical
-variance minus the auxiliary variance. The harmonic sum is exact within
-the separable model. The profile retains a mesh error, especially near
-zero photon energy, where the auxiliary smoothing affects the cutoff.
+variance minus the auxiliary variance. The solver rejects the mesh if
+estimated leakage across zero or the negative photon-weighted bins
+exceed $10^{-8}$ of the corresponding positive measure. The harmonic
+sum is exact within the separable model. The profile retains a mesh error,
+especially near zero photon energy.

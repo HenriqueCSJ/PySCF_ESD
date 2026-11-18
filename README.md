@@ -61,7 +61,9 @@ print("Integrated absorption", report["absorption"]["population_weighted_oscilla
 print("Rate convergence", report["emission"]["positive_photon_moments"]["M3"]["status"])
 ```
 
-`esd.run` uses the geometry, named basis, and charge of a built PySCF molecule. Supply real atoms, spherical all-electron basis functions, and `spin=0` for the automatic singlet route. Choose `target_index=1` for the second singlet in Python, or `--state 2` on the CLI. Indices follow the roots at relaxed S₀ and the optimizer tracks the assigned state from there.
+`esd.run` uses the geometry, named basis, charge, and atom-ordered masses of a built PySCF molecule. It carries isotope masses from `mol.nucprop` into VG, AH, and automatic models on CPU and GPU. Pass `masses_amu` to supply explicit masses in atom order. Supply real atoms, spherical all-electron basis functions, and `spin=0` for the automatic singlet route.
+
+Choose `target_index=1` for the second singlet in Python, or `--state 2` on the CLI. Indices follow the roots at relaxed S₀ and the optimizer tracks the assigned state from there. CPU VG accepts a single resolved root when it spans the full occupied–virtual excitation space, as in H₂/STO-3G. A truncated root window still needs an additional root above the target.
 
 Use `esd.Settings` with `esd.run_vibronic` to control the initial root count, grid level, and SCF or response tolerances. This entry point takes Cartesian coordinates in bohr. Lower-level APIs accept derivatives, normal modes, dipoles, and model Hamiltonians from prepared data. [Python API](docs/api.md) · [Settings and units](docs/using-methods.md#choosing-the-level-of-theory)
 
@@ -112,7 +114,7 @@ pyscf-esd molecule.xyz --backend gpu --model ah --xc pbe0 --solvent cyclohexane 
 2. **Follow the excited state.** Transition-density overlap across the two AO bases determines the state correspondence and sign. The excited-state optimizer uses analytic gradients, checks the local root window, and records the electronic identity through the optimization.
 3. **Verify the endpoint.** Check stationarity and the projected vibrational curvatures. A geometry that looks chemically reasonable can still sit on a saddle or a different electronic root.
 4. **Handle orbital instabilities.** The stability checks distinguish an internal RKS saddle from instability toward spin breaking. An internal recovery follows the unstable rotation and verifies a lower, stable solution. A spin-breaking failure can trigger an explicitly selected alternative functional, starting the full workflow again. Each attempt records its actual electronic method and state.
-5. **Qualify the spectrum.** Grow the vibrational basis to check initial population and final dipole-strength coverage. The adaptive harmonic route also bounds the omitted positive-photon contributions to oscillator strength, radiative rate, and radiant power. An incomplete run reports the limiting check and can retain partial data for inspection.
+5. **Qualify the spectrum.** Grow the vibrational basis to check initial population and final dipole-strength coverage. The adaptive harmonic route also bounds omitted positive-photon contributions to oscillator strength, radiative rate, and radiant power. If growth hits the overlap budget, it checks the largest affordable final cutoff for each viable initial cutoff. An incomplete run can retain the best partial spectrum by the weakest required coverage.
 
 The default checks orbital stability at the minima. Use `--reference-checks all` to extend the checks to sampled points. Repeat `--fallback-xc XC` to allow ordered, explicit restarts after spin-breaking instability. Each new functional gets its own state assignment at the relaxed ground geometry. [Stability, recovery, and root tracking](docs/methods.md#electronic-reference-and-state-tracking)
 
@@ -124,7 +126,7 @@ The optimizer uses projected Cartesian BFGS with analytic gradients. A trial mus
 - **CPU DFT AH.** Uses analytic gradients, the analytic S₀ curvature, and checked local fits to displaced S₁ gradients and signed dipoles for excited-state curvature and HT. An optional fixed-geometry CPU API provides explicit central differences with signed root tracking and checkpointed samples.
 - **CPU RHF–CIS controls.** Conventional real, all-electron singlet CIS supports analytic S₁ Hessian and dipole derivatives. LiH and formaldehyde qualify this route against independent checks. These retained controls are distinct from the DFT workflow.
 - **GPU VG, AH, and automatic screening.** GPU VG supplies the analytic reference curvature and gradient. Supported GPU AH computes the two Hessians and phase-matched HT derivative analytically. `auto` can use the GPU for direct potential and dipole samples in the nuclear anharmonic model. Parts of assembly and the nuclear solver run on the host.
-- **Prepared GPU LR-TDA, vacuum or equilibrium C-PCM.** The analytic Hessian includes orbital and TDA root response, auxiliary-basis and density-fitting derivatives, moving XC quadrature, fourth-order semilocal XC terms, and the matching solvent response where applicable. The dipole derivative includes the occupied and excitation response in the tracked electronic phase.
+- **Prepared GPU LR-TDA, vacuum or equilibrium C-PCM.** The analytic Hessian includes orbital and TDA root response, auxiliary-basis and density-fitting derivatives, moving XC quadrature, fourth-order semilocal XC terms, and the matching solvent response where applicable. With a `progress` callback the Hessian reports the C-PCM contribution at `fixed_density_solvent`. The dipole derivative includes the occupied and excitation response in the tracked electronic phase. The workflow reports the largest error observed across the eligible zero-point HT probes with its mode index and corresponding limit.
 
 GPU `vg`, `ah`, and `auto` use GPU4PySCF and require a supported global hybrid built from LDA/GGA components, such as PBE0, and a spherical all-electron basis. Install GPU4PySCF for your CUDA environment before running these models. AH and `auto` also require fourth-order XC derivatives. PBE0 has a built-in analytic expression. Other compatible functionals can require a matching LibXC build selected via `PYSCF_ESD_LIBXC_LXC`. A rejected GPU derivative is recorded as a workflow failure. [GPU setup and supported routes](docs/using-methods.md#gpu-vg-ah-and-automatic-screening) · [Prepared analytic C-PCM derivatives](docs/using-methods.md#analytic-derivatives-for-prepared-c-pcm-roots)
 
@@ -181,7 +183,7 @@ Here $i$ and $f$ are the initial and final vibrational states, $Q_k$ is an initi
 
 The absorption calculation starts on S₀. Fluorescence starts on the relaxed emitting surface, reverses the Duschinsky transformation, and uses that surface's thermal populations. Absorption oscillator strengths carry one power of photon energy. Spontaneous photon rates carry three. These differences affect spectral shape, dominant lines, and the Stokes separation.
 
-`harmonic_spectrum` returns assigned sticks from the selected basis. `thermal_harmonic_spectrum` evaluates broadened all-quanta FC/HT profiles with a characteristic function, including complex input amplitudes for spin–orbit spectra. It can return reduced dipole-strength density for comparison and the separate photon-weighted moment needed for absolute rates. [Harmonic theory and API](docs/methods.md#harmonic-vibronic-model) · [Thermal profiles](docs/numerical-results.md#thermal-profiles-and-prepared-rotors)
+`harmonic_spectrum` returns assigned sticks from the selected basis. `thermal_harmonic_spectrum` evaluates broadened all-quanta FC/HT profiles, including complex input amplitudes for spin–orbit spectra. Identical, undisplaced harmonic surfaces give exact HT sidebands. This route applies the positive-photon cutoff and energy weighting at the original line energies, then centers a Gaussian on each retained transition. The characteristic-function route for general surfaces raises an error when the FFT mesh cannot resolve the cutoff. The API can return a reduced dipole-strength density alongside the photon-weighted profile. [Harmonic theory and API](docs/methods.md#harmonic-vibronic-model) · [Thermal profiles](docs/numerical-results.md#thermal-profiles-and-prepared-rotors)
 
 ## Nuclear dynamics
 
@@ -347,14 +349,14 @@ The captions identify the model, linewidth, and energy reference. An aligned env
 <details>
 <summary><strong>Water · matched CPU and RTX 4070 Laptop GPU</strong></summary>
 
-Both PBE0/6-31+G* analytic VG paths produced **9,100 assigned lines in each direction** at 298.15 K and passed 16 numerical checks. The largest line-energy differences were **1.13 × 10⁻⁵ cm⁻¹** in absorption and **1.04 × 10⁻⁵ cm⁻¹** in emission. The maximum S₀ Hessian discrepancy was **7.04 × 10⁻¹¹ Hartree/bohr²**. Verification of a CPU orbital-response correction gave an S₁ residual of **8.51 × 10⁻¹¹** at the requested 10⁻¹⁰ tolerance. The production calculation uses analytic derivatives at the supplied ground geometry.
+Both PBE0/6-31+G* analytic VG paths produced **9,100 assigned lines in each direction** at 298.15 K. The rerun on PySCF 2.15.0 and GPU4PySCF 1.9.2 passed **all 16 checks** with zero displaced geometries. The maximum CPU–GPU differences were **3.64 × 10⁻¹¹ Hartree/bohr** for the S₁ gradient and **6.18 × 10⁻¹¹ Hartree/bohr²** for the S₀ Hessian. The largest line-position differences were **1.18 × 10⁻⁵ cm⁻¹** in absorption and **1.12 × 10⁻⁵ cm⁻¹** in emission.
 
-The warmed three-run medians were **21.37 s on two CPU threads** and **36.80 s on the RTX 4070 Laptop GPU**. For this system, a separate timing profile explained most of the extra GPU time through SCF/TDA setup, response validation, and orbital stability checks. The same benchmark measures both numerical agreement and wall time.
+A separate GPU water test exercised the analytic S₁ Hessian with equilibrium C-PCM and verified the solvent progress callback. The VG rerun also verified the native direct RKS Fock call in GPU4PySCF 1.9.2.
 
 ```bash
 python examples/validate_water_cpu.py water-validation --threads 2
 python examples/validate_water_gpu.py water-validation/reference.json \
-  water-gpu-report.json --threads 2 --repeats 3
+  water-gpu-report.json --threads 2 --repeats 1
 ```
 
 Add `--stencil` to the CPU control to compare the analytic gradient with independent displaced points. [Matched benchmark and tolerances](docs/validation.md#water-cpu-and-gpu)
@@ -364,7 +366,7 @@ Add `--stencil` to the CPU control to compare the analytic gradient with indepen
 <details>
 <summary><strong>LiH · CPU default from XYZ</strong></summary>
 
-CPU `auto` completed both spectra with PBE0/def2-TZVPD at 0 K. It optimized both surfaces, tracked the first singlet, and selected a direct one-mode DVR using 51 energy and dipole evaluations. The six retained sticks per direction cover **99.52%** and **99.83%** of the absorption and emission dipole strength. The report marks the energy-weighted moments `unassessed` for this anharmonic route. [Input and reproduction command](docs/validation.md#cpu-default-from-xyz)
+CPU `auto` completed both spectra with PBE0/def2-TZVPD at 0 K. It optimized both surfaces, tracked the first singlet, and selected a direct one-mode DVR using 51 energy and dipole evaluations. The six retained sticks per direction cover **99.52%** and **99.83%** of the absorption and emission dipole strength. The retained lines give a vacuum radiative rate of **4.3912 × 10⁷ s⁻¹**. The report marks the energy-weighted moments `unassessed` for this anharmonic route. [Input and reproduction command](docs/validation.md#cpu-default-from-xyz)
 
 </details>
 
@@ -430,7 +432,7 @@ The 0 K panel shows the native energy axis and absolute spectral densities with 
 
 The single-coordinate diagnostic holds the signed, angle-dependent dipole fixed and compares a local harmonic well with a periodic rotor at 298.15 K. Both curves in each direction share one normalization and Gaussian σ of 0.00062 eV. The room-temperature benchmark above adds the **11 harmonic spectators** and uses a distinct retained electronic input and linewidth.
 
-The archived replay defaults to **PBE0/TDA** and offers **SF-TDA** with auxiliary UKS spectator curvatures. The restricted PBE0 reference has a known spin-breaking instability. Its native absorption maximum is **1.695 eV**, versus **1.789 eV** measured. The closer aligned envelope tests the periodic nuclear model under those inputs. [Reference checks and comparison settings](docs/validation.md#cf₃no-at-298-k) · [Replay driver](examples/replay_cf3no_thermal.py)
+The archived replay defaults to **PBE0/TDA** and offers **SF-TDA** with auxiliary UKS spectator curvatures. At 298 K and Gaussian FWHM 80 cm⁻¹, both numerical replays reproduced the retained absorption and emission profiles on the native energy axis. The largest difference on common support was **1.31 × 10⁻¹³** of the corresponding archived peak. The restricted PBE0 reference has a known spin-breaking instability. Its native absorption maximum is **1.695 eV**, versus **1.789 eV** measured. [Reference checks and comparison settings](docs/validation.md#cf₃no-at-298-k) · [Replay driver](examples/replay_cf3no_thermal.py)
 
 ```bash
 # The plotting route for SF-TDA uses Matplotlib.
@@ -540,7 +542,7 @@ OMP_NUM_THREADS=2 OPENBLAS_NUM_THREADS=1 python -m unittest discover -s tests -v
 python examples/validate_anharmonic_rotor.py
 ```
 
-The tests exercise analytic oscillator and rotor limits, signed and complex dipole closure, relative phases around periodic paths, state identity and orbital stability, response derivatives, CPU/GPU comparisons, and incomplete-workflow behavior. GPU integration checks use the relevant CUDA and XC support.
+The validation run passed **322 of 324 tests**, including isotope propagation, single-root VG, overlap-budget recovery, the photon cutoff, off-grid Gaussian line centers, HT diagnostics, and the GPU C-PCM callback. Two LDA exchange tests were skipped because the installed LibXC lacked its fourth derivative. [Validation guide](docs/validation.md)
 
 Start with the [validation guide](docs/validation.md) to pick a replay. Water and the synthetic rotor have runnable inputs in the checkout. The larger molecular replays use caller-supplied retained electronic data. The three naphthalene spectra are available in native eV along with their diagnostic reports. To judge agreement, compare the same observable, broadening, units, polarization, and reference energy. Vibrational coverage measures numerical completeness within the model.
 
