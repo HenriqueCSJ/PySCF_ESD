@@ -2,6 +2,8 @@
 
 [Project home](https://github.com/HenriqueCSJ/PySCF_ESD/blob/main/README.md) · [Python API](api.md) · [Methods](methods.md) · [Validation](validation.md)
 
+This guide follows the automatic singlet calculation from input to output. For a complete environment setup use [installation](installation.md). The [first calculation](quickstart.md) provides a runnable molecular example and the [command-line reference](command-line.md) lists every flag and default.
+
 ## Install
 
 Use Python 3.10 or newer. For electronic structure, use Linux or WSL and create the environment in that system.
@@ -46,6 +48,8 @@ The periodic torsion workflow uses [a separate Python API](api.md#periodic-rotor
 
 ## Command-line options
 
+The [full CLI reference](command-line.md) also covers backend selection, solvents, exit status and output publication. The most frequently used controls are listed below.
+
 - `--output PATH` selects a new directory. Default is the input basename with extension `.esd`.
 - `--model {auto,ah,vg}` and `--process {both,absorption,emission}` select the model and direction.
 - `--state N` selects the one-based singlet root at the relaxed ground minimum. Default is 1. Confirm the character and continuity of the tracked state in the diagnostics.
@@ -77,6 +81,8 @@ Peak positions, centroids, strongest sticks and the 0–0 energy measure differe
 - **Population, closure or a positive-photon moment fails its coverage check.** Review the initial and final basis cutoffs and the omitted-moment bounds in `diagnostics.json`. Increase the applicable vibrational budget if the expected memory and cost are manageable. Converge line positions or profile metrics of interest independently.
 
 ## NVIDIA GPU workflow
+
+See the dedicated [GPU guide](gpu.md) for AH and automatic screening, analytic derivative support, C-PCM, environment checks and prepared response objects.
 
 Install compatible GPU4PySCF, CuPy and cuTENSOR packages in a CUDA-enabled Linux or WSL environment. The [high-level GPU workflow](using-methods.md#gpu-vg-ah-and-automatic-screening) supports `vg`, analytic `ah`, and `auto`. The prepared call below runs VG from a stationary S₀ geometry. The electronic operators use native FP64 GPU arrays and the harmonic assembly runs on the host. The default fixed-grid ground Hessian matches the effective CPU route. The prepared VG call can request analytic grid response with `hessian_grid_response=True`. [GPU4PySCF installation](https://github.com/pyscf/gpu4pyscf/tree/v1.9.2#installation)
 

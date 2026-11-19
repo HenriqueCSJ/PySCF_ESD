@@ -1,5 +1,7 @@
 # Choosing and running a method
 
+This guide covers absorption and fluorescence, from electronic method and solvent selection to prepared nuclear models. The [GPU guide](gpu.md) develops the analytic GPU workflow. [Phosphorescence and open-shell calculations](phosphorescence.md) have their own electronic preparation and spin-dependent observables. Use the [command-line reference](command-line.md) for every CLI default and the [API reference](api-reference.md) for parameter and array contracts.
+
 Install the package with the `.[workflow]` extra as shown in the [quick start](https://github.com/HenriqueCSJ/PySCF_ESD/blob/main/README.md#quick-start). The same installation provides the CLI and the Python entry points below.
 
 In a PySCF script, use `from pyscf import esd`. The [`esd.run(mol, ...)` example](https://github.com/HenriqueCSJ/PySCF_ESD/blob/main/README.md#use-as-a-pyscf-module) starts from an existing `pyscf.gto.Mole`. Core APIs such as `esd.run_prepared_ah` and `esd.solve_dvr` are also available through the module.

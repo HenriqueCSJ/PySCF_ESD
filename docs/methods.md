@@ -2,9 +2,15 @@
 
 [Project home](https://github.com/HenriqueCSJ/PySCF_ESD/blob/main/README.md) · [Workflow guide](guide.md) · [Python API](api.md) · [Validation](validation.md)
 
+The high-level workflow combines a tracked electronic surface, a nuclear Hamiltonian, transition amplitudes and a spectral observable. These layers have separate acceptance checks. Select the electronic backend and derivative route explicitly when they affect the approximation. The [calculation guide](using-methods.md) gives runnable choices and the [numerical-results guide](numerical-results.md) defines the exported observables.
+
 ## Electronic reference and state tracking
 
-The CPU backend builds a closed-shell, all-electron molecular reference with direct screened integrals, unpruned atom-centered grids for DFT, and isolated singlet TDA roots. The supported exchange–correlation types are HF, LDA and GGA, including hybrid GGAs. Current workflow scope is gas-phase electric-dipole absorption and fluorescence. Open-shell references, ECPs, solvation, nonlocal correlation, empirical dispersion and nonadiabatic state evolution are outside this route. [PySCF TDDFT and TDA](https://pyscf.org/user/tddft.html)
+The CPU electronic backend builds a closed-shell, all-electron molecular reference with direct screened integrals, unpruned atom-centered grids for DFT, and isolated singlet TDA roots. Its accepted exchange–correlation types are HF, LDA and GGA, including hybrid GGAs. The CPU automatic workflow describes gas-phase electric-dipole absorption and fluorescence. Its input checks exclude ECPs, empirical dispersion, nonlocal correlation, symmetry constraints and named solvents. [PySCF TDDFT and TDA](https://pyscf.org/user/tddft.html)
+
+The high-level GPU workflow uses density-fitted global hybrid LDA/GGA references and accepts gas phase or a named equilibrium C-PCM solvent. The AH and automatic GPU routes use analytic excited-state Hessians and transition-dipole derivatives within that supported domain. Open-shell absorption and phosphorescence have [dedicated Python interfaces](phosphorescence.md). Prepared nuclear models can use electronic inputs supplied by the caller, with their method, units and derivative provenance stated explicitly.
+
+For an isolated TDA root $n$, the response problem is $A X_n=\omega_n X_n$, where $A$ is the TDA response matrix, $X_n$ is the excitation vector and $\omega_n$ is the excitation energy. The tracked excited surface has total energy $E_n(R)=E_0(R)+\omega_n(R)$ at geometry $R$. Optical properties and geometry derivatives belong to that tracked root. A converged ground reference alone does not establish the convergence or isolation of its excited response.
 
 SCF attempts can use projected occupied orbitals from a neighboring point, cold DIIS and a second-order solver. Acceptance requires the independent SCF residual alongside native convergence. TDA eigenpairs are checked against the same response operator. Small problems can use a dense solution of that operator if the iterative solver fails. The CPU TD-RKS analytic gradient checks the absolute orbital-gap-preconditioned Z-vector residual against the stated response tolerance (default 10⁻¹⁰). A residual correction uses the original operator and tolerance if the Krylov restart has discarded a small residual direction. [PySCF response correction](https://github.com/pyscf/pyscf/pull/3384)
 
@@ -29,11 +35,45 @@ The CPU AH route optimizes S₀ and the tracked excited surface using analytic g
 
 The automatic AH route also checks linear HT at the two signed zero-point displacements of the mode with the largest predicted dipole change when its vibrational quantum is at least the nearest computed electronic root gap. The direct dipoles use the tracked phase and serve as validation points. If the linear extrapolation fails, the workflow reports the mode and residual and blocks the isolated-state spectrum and rate.
 
+The fixed-grid convention in the single-geometry VG benchmark and the moving-quadrature convention in the high-level analytic GPU AH route describe different derivative settings. The method report identifies each route. A local regression of analytic gradients uses several geometries to estimate curvature and is a numerical derivative model. Analytic differentiation and direct electronic sampling for an anharmonic potential have distinct roles. The direct potential samples define a nuclear model and require their own state and interpolation checks.
+
 ## Harmonic vibronic model
 
 AH aligns the two minima in a common mass-weighted Cartesian frame, removes rigid motion and compares the two vibrational subspaces. The polar factor of their overlap gives an orthogonal Duschinsky transformation. Overlap singular values, the rotation correction and the displacement projection residual measure the quality of that approximation. The low-level adapter defaults to a subspace singular-value loss tolerance of 10⁻³. The higher-level workflow also reports its separate explicit fit criteria. For linear molecules, relative axial orientation remains undetermined by the rigid fit, so coordinate-dependent amplitudes may need an externally specified frame.
 
 The affine map is `Q_f = J Q_i + K`. The signed 0–0 gap is the final-minus-initial electronic minima difference plus the final-minus-initial zero-point difference. VG uses shared frequencies, so that zero-point difference is zero. For harmonic HT, each Cartesian dipole component is expanded to first order in the initial coordinates. The solver computes harmonic Franck–Condon overlaps with a Gaussian generating-function recurrence and obtains the linear-coordinate matrix elements with ladder operators. The constant and linear dipole terms combine as amplitudes, including signed interference. Reversing an AH transition swaps surfaces, applies `(Jᵀ, −JᵀK)` and re-expands the same dipole in the emitting coordinates.
+
+In atomic units the local harmonic Hamiltonian on surface $s$ is
+
+$$
+\hat H_s=E_s(R_s)+\frac12\sum_k\left(-\frac{\partial^2}{\partial Q_{s,k}^2}
++\omega_{s,k}^2Q_{s,k}^2\right),
+$$
+
+where $Q_{s,k}$ is a mass-weighted normal coordinate in $\sqrt{m_e}\,a_0$, and $\omega_{s,k}$ is its energy quantum in Hartree. The harmonic absorption origin is
+
+$$
+E_{00}=E_1(R_1)-E_0(R_0)+\frac12\sum_k(\omega_{1,k}-\omega_{0,k}).
+$$
+
+The Duschinsky rotation $J$ maps ground-mode coordinates into excited-mode coordinates, and $K$ is the corresponding displacement. Reversal uses $J^{-1}=J^{\mathsf T}$ and $-J^{\mathsf T}K$. The linear transition-dipole expansion in the initial coordinate basis is
+
+$$
+\boldsymbol\mu(Q_i)=\boldsymbol\mu_0+\sum_k\boldsymbol d_kQ_{i,k},\qquad
+\boldsymbol M_{if}=\boldsymbol\mu_0\langle\chi_f|\chi_i\rangle+
+\sum_k\boldsymbol d_k\langle\chi_f|Q_{i,k}|\chi_i\rangle.
+$$
+
+Here $\boldsymbol d_k$ is a signed Cartesian dipole derivative and $\chi_i$, $\chi_f$ are initial and final nuclear eigenfunctions. Squaring the full amplitude preserves FC–HT interference. A state phase or mode-sign change must be propagated into every quantity sharing that gauge.
+
+At temperature $T>0$, initial eigenstates have populations
+
+$$
+p_i=\frac{\exp[-(\epsilon_i-\epsilon_0)/(k_{\mathrm B}T)]}{Z},\qquad
+Z=\sum_i\exp[-(\epsilon_i-\epsilon_0)/(k_{\mathrm B}T)].
+$$
+
+$k_{\mathrm B}$ is the Boltzmann constant and $\epsilon_i$ are initial nuclear levels. The harmonic partition function is evaluated analytically. Retained hot-state populations keep the denominator of the complete model, allowing the reported coverage to reveal truncation. The thermal absorption and relaxed emission ensembles belong to their respective initial surfaces.
 
 The harmonic basis is cut on total excitation quanta. The exact partition function gives initial population coverage. Dipole closure provides an independent final-state strength denominator when it is nonzero. Both coverage checks apply before the positive photon-energy filter. The adaptive harmonic solver separately bounds omitted initial and final contributions to the positive-photon moments `M₁` for absorption and `M₃` and `M₄` for emission. For emission from one initial level, the maximum photon energy is its excitation energy above the final vibrational ground level. Together with dipole closure this bounds the omitted strength weighted by the photon energy. For absorption, harmonic expectations give the signed first moment analytically. Bounding the magnitude of its negative-energy contribution then bounds the positive first moment. Thermal harmonic averages bound the hot-state contribution. These checks qualify integrated observables within the harmonic model. Individual bands and broadened profiles can have their own convergence requirements.
 
@@ -45,9 +85,18 @@ The thermal harmonic profile solver sums all quanta with an affine dipole multip
 
 **Supplied periodic coordinate and harmonic bath.** The periodic coordinate uses a constant-inertia spectral DVR at a common energy zero. Its transition amplitudes integrate the signed dipole along the coordinate. For a closed loop of isolated real states, each electronic phase closure determines its own nuclear boundary. A sign reversal uses a half-integer Fourier kinetic basis. The transition dipole closure is the product of the two electronic signs. The local rotor tools can remove rigid motion and transport harmonic spectator modes between angles. The reduced model allows different constant inertias between electronic surfaces and Duschinsky mixing within the harmonic spectator subspace. It neglects variable inertia, nonseparable spectator–rotor interactions, and nuclear-spin statistical weights. [Hybrid DVR–harmonic model](https://doi.org/10.1021/acs.jctc.7b00236)
 
+For angular coordinate $\theta$ and constant angular inertia $I_s$ in atomic units, the active Hamiltonian and transition amplitude are
+
+$$
+\hat H_s=-\frac{1}{2I_s}\frac{d^2}{d\theta^2}+V_s(\theta),\qquad
+\boldsymbol M_{if}=\int\psi_f^*(\theta)\boldsymbol\mu(\theta)\psi_i(\theta)\,d\theta.
+$$
+
+Both $V_s$ potentials share one electronic energy zero, and $\boldsymbol\mu(\theta)$ is a signed vector in one Cartesian frame. The electronic closure sign $\eta_s=\pm1$ determines $\psi_s(\theta+2\pi)=\eta_s\psi_s(\theta)$ in the transported real gauge. The dipole has closure sign $\eta_0\eta_1$. Removing separate potential minima without retaining their offset would destroy the optical energy reference. The [prepared-data contracts](api.md#periodic-rotor-and-thermal-profile) describe endpoint and overlap conventions.
+
 For a thermal broadened profile the separable solver combines a finite active-coordinate dipole measure with the all-state harmonic spectator characteristic function. The active populations are normalized against the full finite-grid DVR spectrum. Retained active levels determine population and dipole-closure coverage. The inverse Fourier calculation uses an energy mesh, a signed-measure tail bound and an auxiliary smoothing width for the cutoff at positive photon energy. The auxiliary width is removed in quadrature from the physical Gaussian. The solver raises an error when estimated leakage across zero or the magnitude of removed negative photon-weighted bins exceeds 10⁻⁸ of the corresponding positive measure. The tail bound concerns the underlying dipole measure. Check the final photon-weighted profile against a finer mesh, especially near zero energy. Checks on an interpolated nuclear grid are also separate from checks on the sampled electronic potential and dipole.
 
-**Coupled reduced spaces.** Sine Galerkin (2D) and sine DVR (3D) solvers treat prescribed constant-mass surfaces, including parity blocks for a reflection-symmetric inversion. The 3D operator applies the kinetic term by discrete sine transforms and can use a Lanczos spectral measure for a broadened response. The lower eigenpairs identify physical low levels; Lanczos quadrature nodes represent a spectral measure. Explicit Fermi mixing in an orthonormal vibrational subspace can use a real symmetric Hamiltonian and signed dipoles. These models require the coordinates and electronic information appropriate to the molecule.
+**Coupled reduced spaces.** Sine Galerkin (2D) and sine DVR (3D) solvers treat prescribed constant-mass surfaces, including parity blocks for a reflection-symmetric inversion. The 3D operator applies the kinetic term by discrete sine transforms and can use a Lanczos spectral measure for a broadened response. The lower eigenpairs identify physical low levels. Lanczos quadrature nodes represent a spectral measure. Explicit Fermi mixing in an orthonormal vibrational subspace can use a real symmetric Hamiltonian and signed dipoles. These models require the coordinates and electronic information appropriate to the molecule.
 
 ## Physical observables
 
@@ -61,6 +110,12 @@ Let `E > 0` be the photon energy in Hartree, `p_i` the normalized initial-level 
 - The Gaussian peak, photon-weighted centroid and strongest line are separate observables. Positive peak Stokes shift means the absorption maximum lies above the emission maximum in wavenumber. A common energy-zero convention preserves their connection to the 0–0 gap.
 
 Use the physical rate prefactors for comparisons to absolute oscillator strengths or vacuum rates. Refractive-index corrections, nonradiative rates, nonequilibrium populations and quantum yield require additional modeling. [NIST electric-dipole relations](https://physics.nist.gov/Pubs/AtSpec/node17.html)
+
+## Interpreting a completed calculation
+
+A completed calculation meets the implemented electronic residual, geometry, state-identity and nuclear-coverage checks for its selected model. Those checks qualify the numerical result within the specified electronic and nuclear approximations. DFT functional error, basis incompleteness, an omitted conformer, solvent dynamics and higher-order vibronic effects can still affect agreement with experiment.
+
+Transfer to a new molecule uses the same physical settings and acceptance criteria. Experimental peaks may define a declared comparison shift or linewidth in postprocessing. They do not enter the default electronic energies, transition moments or nuclear Hamiltonian. Keep the native-energy numerical report when comparing aligned envelopes. The [comparison guide](spectral-comparison.md) gives the density conversions and the [validation guide](validation.md) states the conditions of the retained benchmarks.
 
 ## Source map
 

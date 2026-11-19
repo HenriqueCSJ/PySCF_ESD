@@ -6,7 +6,7 @@ The [expanded benchmark gallery on the project page](https://github.com/Henrique
 
 The captions give the linewidth and energy reference for each plot. Pyridine and quinine retain the absolute absorption scale. Each plot uses the axis and comparison settings of its benchmark.
 
-<details open>
+<details open markdown="1">
 <summary><strong>Benzene · n-hexane · geometry sensitivity and anharmonicity</strong></summary>
 
 <p>
@@ -23,7 +23,7 @@ The PBE anharmonic model reproduces the three main fluorescence bands and reduce
 
 </details>
 
-<details>
+<details markdown="1">
 <summary><strong>CF₃NO · periodic rotor and 11 harmonic spectators</strong></summary>
 
 ![CF3NO absorption at 298 K against the measured trace and calculated fluorescence for PBE0 and spin-flip TDA](benchmarks/cf3no-298k.png)
@@ -36,7 +36,7 @@ The 0 K panel shows the native energy axis and absolute spectral densities with 
 
 </details>
 
-<details>
+<details markdown="1">
 <summary><strong>Quinine dication · water · AS–Franck–Condon</strong></summary>
 
 <p>
@@ -49,7 +49,7 @@ The broadened absorption maximum is **3.606 eV** before alignment, compared with
 
 </details>
 
-<details>
+<details markdown="1">
 <summary><strong>9-Cyanoanthracene · cyclohexane · AS–Franck–Condon</strong></summary>
 
 <p>
@@ -62,7 +62,7 @@ The wavelength-domain comparison shows Gaussian FWHM values of **80**, **147**, 
 
 </details>
 
-<details>
+<details markdown="1">
 <summary><strong>Pyridine · vapor · AH + Duschinsky + Herzberg–Teller</strong></summary>
 
 <p>
@@ -75,7 +75,7 @@ The local harmonic origin is **4.217 eV** versus **4.311 eV** measured. The comp
 
 </details>
 
-<details>
+<details markdown="1">
 <summary><strong>Lithium hydride · one-mode analytic AH control</strong></summary>
 
 ![LiH 0 K absorption and fluorescence from the archived analytic RHF-CIS AH test](benchmarks/lih.png)
@@ -84,7 +84,7 @@ This archived RHF–CIS/6-31G test exercises the analytic derivatives and AH ass
 
 </details>
 
-<details>
+<details markdown="1">
 <summary><strong>Naphthalene · 77 K · spin–orbit phosphorescence</strong></summary>
 
 ![Naphthalene phosphorescence at 77 K in gas and in a C-PCM solvent control, compared with hydrocarbon glass](benchmarks/naphthalene-phosphorescence.png)

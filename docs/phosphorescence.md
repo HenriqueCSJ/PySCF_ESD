@@ -2,6 +2,59 @@
 
 Use a converged UKS reference for spin-free triplet derivatives and spin-conserving open-shell spectra. For phosphorescence from a closed-shell reference, PySCF can build spin–orbit coupling (SOC) and electric-dipole matrices from restricted DFT/TDA. These inputs support vertical electronic rates and adiabatic Hessian (AH) emission with vibrational structure.
 
+## Choose the calculation
+
+Fluorescence and phosphorescence have separate electronic preparation requirements. The automatic singlet command `pyscf-esd` and `esd.run` prepare closed-shell absorption and fluorescence. The functions on this page accept the open-shell references, response objects or spin matrices needed by the requested process.
+
+- For a triplet determinant's energy, gradient and Hessian, use [analytic_uks_triplet_endpoint](#analytic-derivatives-of-a-uks-triplet).
+- For vertical spin-conserving absorption out of a UKS reference, use [unrestricted_tda_vertical_spectrum](#spin-conserving-open-shell-absorption-and-emission). The same result gives electric-dipole decay coefficients back to that reference.
+- For SOC matrices and finite-state electronic phosphorescence, use [run_pyscf_tda_soc](#automatic-soc-and-interstate-dipoles).
+- For weak-SOC intensity borrowing over the whole finite occupied–virtual space, use [tda_soc_response](#full-space-first-order-soc-and-analytic-herzbergteller-coupling). It can differentiate the borrowed moment analytically along supplied nuclear directions.
+- For resolved spin sublevels and vibrational emission, supply matched electronic moments and two harmonic surfaces to [run_prepared_phosphorescence](#prepared-vibronic-phosphorescence).
+- For singlets obtained through spin-flip response from a high-spin auxiliary reference, follow the [GPU spin-flip API](using-methods.md#spin-flip-tda-on-gpu).
+
+State selection depends on the physical electronic character as well as the numerical root index. `mol.spin` is the electron-count difference $N_\alpha-N_\beta$. Setting it establishes the determinant's spin projection. Its expectation value $\langle S^2\rangle$ and the response-state character still need inspection.
+
+## Prepare a UKS reference
+
+The following recipe illustrates preparation of a gas-phase high-spin oxygen determinant at a supplied geometry. Replace the molecule, charge, basis and functional with the intended model. An endpoint readout can be evaluated at any qualified geometry. A vibrational spectrum additionally requires verified minima on both surfaces.
+
+```python
+from pyscf import dft, esd, gto
+
+triplet_mol = gto.M(
+    atom="O 0 0 0; O 0 0 1.21",
+    basis="def2-svp",
+    unit="Angstrom",
+    spin=2,
+    charge=0,
+    symmetry=False,
+)
+uks = dft.UKS(triplet_mol, xc="pbe0").density_fit()
+uks.grids.level = 4
+uks.grids.prune = None
+uks.small_rho_cutoff = 0
+uks.conv_tol = 1e-11
+uks.conv_tol_grad = 1e-8
+uks.kernel()
+if not uks.converged:
+    raise RuntimeError("Converge the UKS reference before using its derivatives")
+
+endpoint = esd.analytic_uks_triplet_endpoint(
+    uks,
+    include_hessian=True,
+    gradient_grid_response=False,
+    scf_residual_tolerance=1e-7,
+)
+print(endpoint.energy_hartree)
+print(endpoint.spin_squared, endpoint.spin_contamination)
+print(endpoint.scf_residual_hartree)
+```
+
+For a GPU endpoint, prepare `gpu4pyscf.dft.UKS` in the same way and pass that converged object to the adapter. See [GPU installation and model scope](gpu.md). The endpoint adapter retains the native CPU or GPU backend and returns read-only NumPy derivative arrays to the caller.
+
+The endpoint checks a fresh occupied–virtual orbital residual independently of `uks.converged`. Its default limit is $10^{-7}$ Hartree. For a triplet, `spin_contamination` is $\langle S^2\rangle-2$. Review that value together with the orbital character and the geometry path. The adapter reports the determinant diagnostics and leaves the acceptable contamination threshold to the physical model.
+
 ## Automatic SOC and interstate dipoles
 
 Start with a converged nonrelativistic, all-electron molecular RKS calculation at the geometry of interest. For phosphorescence use the independently checked triplet minimum. The CPU driver solves the singlet and triplet TDA manifolds on the same reference, then builds the matrices from PySCF integrals. It supports gas-phase RKS, including density-fitted references, with real orbitals and integer occupations.
@@ -16,6 +69,23 @@ print(rates.vacuum_radiative_lifetime_s)
 ```
 
 Increase the number of singlets and triplets until the rates stabilize. `response_tolerance` defaults to a TDA residual norm of $10^{-7}$ Hartree. The Davidson linear-dependence cutoff scales with the requested residual to retain small correction directions. When both native PySCF TDA objects are already solved, use `esd.assemble_pyscf_tda_soc(singlet_tda, triplet_tda)` with optional `singlet_roots` and `triplet_roots`. The selection preserves zero-based native root identities and order. The state basis has the ground state, the selected singlets, and three Cartesian spin components for each selected triplet.
+
+`run_pyscf_tda_soc` performs new singlet and triplet TDA solves on the supplied RKS reference. `assemble_pyscf_tda_soc` reads already solved roots. The two native TDA objects passed to the assembler must share the exact same RKS object. Their selected roots need positive excitation energies, converged native flags, real normalized singles amplitudes and the complete occupied and virtual orbital spaces of that model.
+
+The returned `PySCFTDASOC` exposes `spin_free_energies_hartree`, `spin_orbit_hartree` and `dipole_operator_au`. If $N=1+n_S+3n_T$, their shapes are `(N,)`, `(N, N)` and `(N, N, 3)`. The ground-state energy is zero in the stored spin-free array. The `singlet_roots` and `triplet_roots` tuples retain the selected native root labels. Save the arrays together to preserve their common basis.
+
+```python
+import numpy as np
+
+np.savez_compressed(
+    "soc-inputs.npz",
+    spin_free_energies_hartree=matrices.spin_free_energies_hartree,
+    spin_orbit_hartree=matrices.spin_orbit_hartree,
+    dipole_operator_au=matrices.dipole_operator_au,
+    singlet_roots=np.asarray(matrices.singlet_roots),
+    triplet_roots=np.asarray(matrices.triplet_roots),
+)
+```
 
 The operator is the molecular Breit–Pauli spin–orbit mean field (SOMF). For the spin-summed reference density $D$ and PySCF momentum integrals $G_{\xi,ijkl}$, the spatial coefficient multiplying the electron spin $S_\xi=\sigma_\xi/2$ is
 
@@ -180,10 +250,103 @@ print(lines.einstein_a_s_inverse)
 
 The selected indices are zero-based. Oscillator strengths describe excitation out of the UKS reference and the Einstein coefficients describe the reverse transition back to it at the same geometry. The signed length-gauge dipoles retain the native response phases. The adapter reads the solved roots and evaluates the dipoles without launching new SCF or TDA runs.
 
+To prepare the native response, continue from an already converged `uks` object.
+
+```python
+td = uks.TDA()
+td.nstates = 5
+td.conv_tol = 1e-8
+td.kernel()
+lines = esd.unrestricted_tda_vertical_spectrum(td)
+
+for root, energy, strength, rate in zip(
+    lines.root_indices,
+    lines.photon_energy_hartree,
+    lines.oscillator_strength,
+    lines.einstein_a_s_inverse,
+):
+    print(root, energy, strength, rate)
+```
+
+Choose `td.nstates` within the native response dimension. The returned lines use unit population for each independent electronic transition, so the Einstein coefficients are intrinsic reverse-transition rates. Specify an actual emitting-state population before summing lines from multiple excited roots. Nuclear relaxation and vibronic structure require the corresponding surfaces and overlaps.
+
+## Converge states, moments and rates
+
+The electronic state window and the vibrational basis control different errors. A small change in root energies can coexist with a large change in a weak SOC-induced moment. Record the convergence of the observable being reported.
+
+1. Qualify the electronic reference and emitting minimum. Inspect orbital stationarity, spin contamination where applicable, the selected state's character and positive vibrational curvatures after rigid-motion projection.
+2. At a fixed geometry and electronic recipe, increase the singlet and triplet windows in the finite-matrix calculation. Compare the total radiative rate, Cartesian polarization contributions and triplet-subspace overlap. Include the symmetry channels that contribute to the moment.
+3. For full-space first-order SOC, inspect `relative_residuals`. When slopes are requested, also inspect `derivative_relative_residuals`. The spectral-margin checks qualify the shifted operators independently of the optical right-hand sides.
+4. Converge the vibrational population and positive-photon moments. `run_prepared_phosphorescence` uses `coverage=0.995`, `max_quanta=32` and `max_overlaps=250_000` by default. Its `basis_attempts` records the bases tested for each sublevel. Increase the relevant budget when it prevents the requested coverage.
+5. Compare the native-axis rate with the integrated absolute photon-rate profile on a sufficiently wide and fine grid. Preserve the native energies when quoting a physical rate. Report any display broadening or origin alignment used for comparison.
+
+For the matrix approach, a short state-window study can reuse a converged RKS reference at one geometry.
+
+```python
+state_window_results = []
+for window in (4, 8, 12):
+    operators = esd.run_pyscf_tda_soc(
+        rks_at_triplet_minimum,
+        n_singlets=window,
+        n_triplets=window,
+        response_tolerance=1e-7,
+    )
+    channel = operators.phosphorescence(triplet_root=0, temperature_kelvin=77.0)
+    state_window_results.append(
+        (
+            len(operators.singlet_roots),
+            len(operators.triplet_roots),
+            channel.vacuum_radiative_rate_s_inverse,
+            channel.triplet_subspace_minimum_overlap_squared,
+        )
+    )
+print(state_window_results)
+```
+
+This recipe launches additional TDA calculations. When the finite occupied–virtual dimension is smaller than a requested count, the wrapper retains that full dimension. Record the actual tuple lengths as shown. Preserve complete near-degenerate groups when choosing a truncated window.
+
+The full-space response solves for intensity borrowing across the finite occupied–virtual basis without selecting a finite upper-state window. The basis set, density functional, mean-field reference and weak-SOC approximation remain part of its physical model. Nuclear dipole derivatives additionally require the lowest isolated spatial triplet and a supported analytic nuclear-response model.
+
+## Read phosphorescence results
+
+The electronic result exposes three sublevel photon energies, moments, splittings and vacuum Einstein rates. `sublevel_populations` is present when `temperature_kelvin` is supplied. The reported average rate weights each sublevel once. Its reciprocal is the radiative lifetime under that population model.
+
+The prepared vibronic result exposes `sublevel_spectra`, `sublevel_00_hartree`, `sublevel_populations` and `basis_attempts`. Its `physical_properties` report includes the total vacuum rate, radiative lifetime and a list of per-sublevel numerical summaries.
+
+```python
+import json
+
+report = result.physical_properties
+with open("phosphorescence-properties.json", "w", encoding="utf-8") as handle:
+    json.dump(report, handle, indent=2, allow_nan=False)
+
+print(report["vacuum_radiative_rate_s_inverse"])
+print(report["vacuum_radiative_lifetime_s"])
+for channel in report["sublevels"]:
+    print(
+        channel["sublevel_index"],
+        channel["sublevel_population"],
+        channel["population_weighted_vacuum_rate_s_inverse"],
+    )
+```
+
+Use this block after `run_prepared_phosphorescence`. A zero computed rate has no finite radiative lifetime and is reported with `None`. The measured triplet decay also depends on nonradiative loss and sublevel relaxation. A phosphorescence quantum yield requires the triplet formation probability and all relevant population-transfer and decay channels. [Physical observables and output units](numerical-results.md)
+
+## Errors and diagnostic checks
+
+- A UKS orbital-residual failure means the supplied determinant has not met the requested stationarity threshold. Retain the reported residual and converge the reference before using its derivatives.
+- An incompatible endpoint model identifies a solvent, XC, relativistic, symmetry or fitting feature outside the selected adapter's derivative scope. Use the route matching the prepared electronic model.
+- A failed mixed-triplet assignment or small principal overlap means the supplied spin subspace could not be assigned reliably after mixing. Review the state basis and nearby levels.
+- A nonpositive shifted TDA operator or small spectral margin invalidates the first-order SOC response conditions. Inspect the reference stability and relevant singlet/triplet ordering before interpreting an optical result.
+- A derivative failure at a triplet degeneracy requires a coupled-subspace treatment for the relevant motion. A single isolated-state derivative cannot establish the response there.
+- `WorkflowIncomplete` from the prepared vibronic solver carries the failed sublevel index, coverage diagnostics and any available partial sticks. Compare its basis limits with the required thermal population and photon-weighted moments.
+
+The native molecule, electronic root and integral conventions are defined in the [SOC matrix builder](https://github.com/HenriqueCSJ/PySCF_ESD/blob/main/src/pyscf_esd/pyscf_soc.py), [full-space SOC response](https://github.com/HenriqueCSJ/PySCF_ESD/blob/main/src/pyscf_esd/tda_soc_response.py), [UKS endpoint](https://github.com/HenriqueCSJ/PySCF_ESD/blob/main/src/pyscf_esd/unrestricted.py), [UKS/TDA reader](https://github.com/HenriqueCSJ/PySCF_ESD/blob/main/src/pyscf_esd/unrestricted_tda.py) and [prepared phosphorescence solver](https://github.com/HenriqueCSJ/PySCF_ESD/blob/main/src/pyscf_esd/phosphorescence.py).
+
 ## Further electronic response
 
 - For an automatic relaxed open-shell spectrum, optimize and verify both states, track the response root and phase, and provide independent curvatures and transition-moment response. The existing prepared AH interface can use qualified inputs. The analytic UKS endpoint gives the derivatives of a determinant surface. A response-excited root needs derivatives of its own energy and transition moment.
-- For Condon emission the restricted TDA driver supplies equilibrium SOC and dipole matrices. Automated spin-vibronic HT needs analytic derivatives of the full SOMF and dipole matrices, including orbital and TDA response. The present spin-adapted driver starts from a closed-shell reference. Experimental decay lifetimes and quantum yields also require a population model and the relevant nonradiative rates.
+- The restricted TDA matrix driver supplies fixed-geometry SOC and dipole matrices for Condon emission. The full-space first-order response supplies analytic spin-vibronic HT for the supported gas-phase model, including SOMF, orbital and TDA response. A fully diagonalized spin Hamiltonian with coordinate-dependent matrices requires those matrix derivatives in a common smooth electronic basis. The present spin-adapted preparation starts from a closed-shell reference. Experimental decay lifetimes and quantum yields also require a population model and the relevant nonradiative rates.
 
 ## Naphthalene benchmark
 

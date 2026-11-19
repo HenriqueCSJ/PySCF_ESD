@@ -2,6 +2,43 @@
 
 [Project home](https://github.com/HenriqueCSJ/PySCF_ESD/blob/main/README.md) · [Workflow guide](guide.md) · [Methods](methods.md) · [Validation](validation.md)
 
+This guide connects the principal Python entry points to complete calculations. The [API reference](api-reference.md) gives signatures, result attributes and defaults. The [prepared-data guide](prepared-data.md) explains how to reuse completed electronic calculations, import signed state overlaps and assemble periodic rotor models.
+
+## Use as a PySCF module
+
+Install the package into the same Python environment as PySCF. Both namespaces expose the spectral solvers. The `pyscf.esd` namespace also supplies the `run` convenience function and the electronic `Settings` object.
+
+```python
+from pyscf import esd, gto
+
+mol = gto.M(
+    atom="O 0 0 0; H 0 -0.76 0.58; H 0 0.76 0.58",
+    basis="6-31+g*", unit="Angstrom", charge=0, spin=0,
+    symmetry=False,
+)
+result = esd.run(
+    mol, xc="pbe0", target_index=0, model="ah",
+    backend="gpu", solvent="water", temperature_kelvin=298.15,
+    process="both", progress=print,
+)
+print(result.model_used)
+print(result.physical_properties["spectra"]["emission"])
+```
+
+This example launches a complete electronic and nuclear calculation and requires the GPU dependencies for its selected backend. For a CPU gas-phase calculation, set `backend="cpu"` and omit `solvent`. Named C-PCM solvents in this high-level interface require the GPU backend. The starting `Mole` supplies geometry, charge, a single named basis and atomic masses, including isotope overrides. Use `masses_amu` to override that ordered mass list explicitly.
+
+`esd.run` requires a built closed-shell `Mole`, spherical all-electron orbitals, point nuclei, `symmetry=False` and real atoms. It accepts one named basis string. For a custom `Settings` instance, call [`run_vibronic`](api-reference.md#run-vibronic) directly. A caller-prepared `Mole` can start in ångström because `esd.run` obtains its internal coordinates in bohr. The coordinate-array interface expects bohr.
+
+## Choose an API entry point
+
+- Use `esd.run(mol, ...)` or `run_vibronic(...)` to start from one molecular geometry and request optimization, electronic derivatives and a checked spectrum.
+- Use `run_prepared_ah(...)` after constructing an AH model from two completed minima. It performs the adaptive nuclear calculation using the supplied surfaces and dipole expansion.
+- Use `harmonic_spectrum(...)` for explicit line assignments at chosen quantum cutoffs, or `thermal_harmonic_spectrum(...)` for a broadened all-quanta harmonic profile.
+- Use `solve_dvr(...)` with `anharmonic_spectrum(...)` or `thermal_separable_spectrum(...)` for sampled potentials and a coordinate-dependent dipole.
+- Use the [phosphorescence API](phosphorescence.md) for SOC-mediated emission, analytic spin-vibronic HT and open-shell transitions.
+
+The fixed-geometry `run_cpu_vibronic` and `run_gpu_vibronic` functions construct VG models at a stationary S₀ input. The complete optimized AH and automatic routes are selected through `run_vibronic(model="ah" or "auto", backend=...)`.
+
 ## Units and input conventions
 
 - Electronic, vibrational and photon energies in solver inputs and results are in Hartree. A harmonic frequency input is the energy quantum ℏω. To convert from cm⁻¹, divide by `pyscf_esd.spectral_properties.HARTREE_TO_WAVENUMBER`.

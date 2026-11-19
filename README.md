@@ -9,6 +9,8 @@ PySCF ESD follows an electronic state from a molecular geometry to a spectrum wi
 [![GPL-3.0-only](https://img.shields.io/badge/License-GPL--3.0--only-596773)](LICENSE)
 [![Methods paper](https://img.shields.io/badge/Methods%20paper-PDF-913F62)](docs/paper/pyscf-esd.pdf)
 
+[Read the documentation](https://pyscf-esd.readthedocs.io/en/latest/) · [First calculation](https://pyscf-esd.readthedocs.io/en/latest/quickstart.html) · [API reference](https://pyscf-esd.readthedocs.io/en/latest/api-reference.html)
+
 **Run** · [Install and run](#quick-start) · [PySCF module](#use-as-a-pyscf-module) · [Choose a model](#default-and-options) · [Read results](#output)
 
 **Methods** · [Absorption and fluorescence](#absorption-and-fluorescence) · [Phosphorescence](#phosphorescence) · [Electronic structure and GPU](#electronic-structure-and-gpu) · [Nuclear dynamics](#nuclear-dynamics)

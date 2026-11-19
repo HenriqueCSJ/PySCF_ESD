@@ -1,5 +1,31 @@
 # Numerical results
 
+PySCF ESD writes assigned transitions, radiative observables, relaxation energies and convergence information. Read `diagnostics.json` first, then `properties.json` and the CSV filenames listed in the diagnostics. The [comparison guide](spectral-comparison.md) covers plotting, broadening and energy alignment.
+
+## Read an existing calculation
+
+This reader inspects a completed or partially completed run without starting an electronic calculation.
+
+```python
+import json
+from pathlib import Path
+
+folder = Path("run.esd")
+diagnostics = json.loads((folder / "diagnostics.json").read_text(encoding="utf-8"))
+print("Run status", diagnostics["status"])
+for process, files in diagnostics.get("spectra", {}).items():
+    print(process, files["coverage_status"], files["sticks"])
+
+properties_path = folder / diagnostics.get("physical_properties", "properties.json")
+if properties_path.exists():
+    report = json.loads(properties_path.read_text(encoding="utf-8"))
+    for process, spectrum in report["spectra"].items():
+        for name, moment in spectrum.get("positive_photon_moments", {}).items():
+            print(process, name, moment["status"], moment.get("coverage_lower_bound"))
+```
+
+A run can stop before a usable spectrum exists and write only `diagnostics.json`. Its failure information explains which stage stopped. An incomplete result can retain assigned lines and their physical sums. The convergence status determines whether those sums have reached the requested coverage.
+
 ## Get the rate and lifetime
 
 Request emission or both directions. This example uses analytic GPU AH at 298 K.
@@ -51,10 +77,32 @@ Check `diagnostics.json` for the effective method, state tracking, derivatives a
 - `population`, `dipole_strength_au^2`, and the Cartesian `transition_dipole_*_au` components where available.
 - `oscillator_strength` and `population_weighted_oscillator_strength` for absorption.
 - `vacuum_einstein_a_s^-1` for the intrinsic emission line rate, `population_weighted_vacuum_einstein_a_s^-1` for its contribution to $k_f$, and `population_weighted_vacuum_radiant_power_w` for its power contribution.
-- `initial_assignment_quanta` and `final_assignment_quanta` or the DVR and spectator columns. `assignment_scheme` identifies the convention. VCI labels can describe the dominant harmonic components of mixed states.
+- `initial_assignment_quanta` and `final_assignment_quanta` or the DVR and spectator columns. The JSON report's `assignment_scheme` identifies the convention. VCI labels can describe the dominant harmonic components of mixed states.
 - `condon_strength_au2`, `ht_strength_au2`, and `condon_ht_interference_au2` where the solver provides a decomposition.
 
 Sum the population-weighted Einstein coefficients over the emission CSV to recover the total rate. To get one initial level's rate, sum its intrinsic Einstein coefficients. The standard Gaussian profile CSVs contain relative photon-weighted densities per cm⁻¹. `--sigma 0` still produces sticks and their numerical report. Integrated rates and oscillator strengths come from the sticks and are independent of display broadening.
+
+The `population` column repeats the initial-state population on each line from that state. Sum each distinct initial population once when measuring represented population. Use the population-weighted rate columns directly when measuring the total emission rate.
+
+```python
+import csv
+import json
+import math
+from pathlib import Path
+
+folder = Path("run.esd")
+diagnostics = json.loads((folder / "diagnostics.json").read_text(encoding="utf-8"))
+report = json.loads((folder / "properties.json").read_text(encoding="utf-8"))
+filename = diagnostics["spectra"]["emission"]["sticks"]
+with (folder / filename).open(encoding="utf-8", newline="") as stream:
+    rows = list(csv.DictReader(stream))
+k_r = math.fsum(float(row["population_weighted_vacuum_einstein_a_s^-1"]) for row in rows)
+expected = report["spectra"]["emission"]["vacuum_radiative_rate_s_inverse"]
+assert math.isclose(k_r, expected, rel_tol=1e-12, abs_tol=1e-15)
+print("Retained radiative rate (s^-1)", k_r)
+```
+
+The diagnostics supply partial filenames when appropriate. Empty CSV cells represent quantities outside the selected line representation. JSON `null` represents an unavailable or undefined value.
 
 ## Get the values from Python
 
@@ -98,3 +146,79 @@ def thermal_rates(emission_profile):
 For the equal-population spin–orbit example, each `profiles` entry is one polarization and already includes the triplet population weights in its amplitudes. Compute `rates_xyz = [thermal_rates(p)[0] for p in profiles]` and `k_r = sum(rates_xyz)`. The total radiative lifetime is `1 / k_r` for a positive rate. If Cartesian z is perpendicular to the molecular plane, `rates_xyz[2] / k_r` gives the perpendicular fraction. The [77 K benchmark data](phosphorescence.md#dielectric-and-linewidth-controls) include the native-energy profile for each component.
 
 The [prepared rotor assembler](https://github.com/HenriqueCSJ/PySCF_ESD/blob/main/examples/assemble_separable_rotor.py) already applies these factors. In `spectra_summary.json`, `emission.strength_sum` is $k_f$ in s⁻¹ and `absorption.strength_sum` is the integrated oscillator strength. Take the reciprocal of a positive emission rate for the lifetime. Its CSV files give absolute photon-rate density for emission and oscillator-strength density and cross section for absorption. `profile_area` checks the integral on the output grid. Use the native-energy numerical report for absolute rates when plots have been shifted or peak-normalized.
+
+## Physical definitions and units
+
+For a positive photon energy $E_{if}$ in Hartree, initial vibrational population $p_i$ and Cartesian transition amplitudes $\mu_{if,c}$ in atomic units, the line dipole strength is
+
+$$
+S_{if}=\sum_{c=x,y,z}|\mu_{if,c}|^2.
+$$
+
+The oscillator strength, vacuum Einstein coefficient and population-weighted radiant power are
+
+$$
+f_{if}=\frac{2}{3}E_{if}S_{if},\qquad
+A_{if}=\frac{4\alpha^3}{3t_{\mathrm{au}}}E_{if}^3S_{if},\qquad
+P_{if}=p_i A_{if}E_{if}E_{\mathrm h}.
+$$
+
+Here $\alpha=7.2973525643\times10^{-3}$ is the fine-structure constant, $t_{\mathrm{au}}=2.4188843265864\times10^{-17}$ s is the atomic unit of time and $E_{\mathrm h}=4.3597447222060\times10^{-18}$ J is the Hartree energy. $f_{if}$ is dimensionless, $A_{if}$ is in s⁻¹ and $P_{if}$ is in watts per excited molecule. The code sums the three Cartesian components for the modeled molecular transition. Additional degeneracy factors belong to the chosen state/population model. [Electric-dipole line-strength relations](https://physics.nist.gov/Pubs/AtSpec/node17.html)
+
+The unscaled moments stored by the spectral checks are
+
+$$
+M_n=\sum_{i,f\,;\,E_{if}>0}p_i E_{if}^nS_{if}.
+$$
+
+Thus $(2/3)M_1$ gives integrated thermal oscillator strength, $[4\alpha^3/(3t_{\mathrm{au}})]M_3$ gives the vacuum rate, and an additional Hartree-to-joule factor converts the corresponding $M_4$ into radiant power.
+
+The harmonic `positive_photon_moments` entries contain `retained`, `omitted_initial_upper_bound`, `omitted_final_upper_bound`, `coverage_lower_bound` and `status`. For retained moment $M_n$ and omitted upper bounds $B_{n,i}$ and $B_{n,f}$,
+
+$$
+C_n=\frac{M_n}{M_n+B_{n,i}+B_{n,f}}.
+$$
+
+Exact zero moments with zero omission bounds have full coverage. A report is `complete` when the available lower bound reaches the requested target, `incomplete` when it falls below that target, and `unassessed` when no qualified bound or target is available. Rates are calculated from retained lines with the original populations. A basis can capture almost all unweighted dipole strength while still losing an important photon-weighted tail.
+
+## Resolve electronic relaxation and reorganization
+
+Let $R_0$ and $R_1$ be the optimized ground and excited geometries, with total electronic energies $E_0(R)$ and $E_1(R)$. The report uses
+
+$$
+\begin{aligned}
+E_{\mathrm{abs}}^{\mathrm{vert}}&=E_1(R_0)-E_0(R_0),\\
+E_{\mathrm{em}}^{\mathrm{vert}}&=E_1(R_1)-E_0(R_1),\\
+\Delta E_{\mathrm{ad}}&=E_1(R_1)-E_0(R_0),\\
+\lambda_1&=E_1(R_0)-E_1(R_1),\\
+\lambda_0&=E_0(R_1)-E_0(R_0).
+\end{aligned}
+$$
+
+The vertical gap difference is $\lambda_0+\lambda_1$. The harmonic origin additionally includes half the difference of the two sums of vibrational quanta. The direct deformation terms and local quadratic reorganization descriptors are both available for assessing the harmonic approximation.
+
+Read `electronic_relaxation.energy_differences_hartree` for `vertical_absorption`, `vertical_emission`, `adiabatic_electronic_gap`, `excited_relaxation_from_ground`, `ground_deformation_at_excited` and `vertical_absorption_minus_emission`. The corresponding `energy_differences_cm^-1` has the same keys. Multiply a Hartree difference by `27.211386245981` for eV.
+
+For each mode, the report's displacement-based Huang–Rhys factor and quadratic reorganization energy use $S_k=\omega_k K_k^2/2$ and $\lambda_k=\omega_k S_k$ in atomic units. Duschinsky mixing and HT amplitudes determine the complete spectral intensities. Mode fractions are weighted by oscillator strength for absorption or photon rate for emission. Combination bands can contribute to several fractions, whose sum may exceed one.
+
+## Interpret intensity decomposition and spectral moments
+
+The line amplitude is the coherent sum $\boldsymbol\mu_{if}=\boldsymbol\mu_{if}^{\mathrm C}+\boldsymbol\mu_{if}^{\mathrm{HT}}$. Its squared norm is
+
+$$
+S_{if}=|\boldsymbol\mu_{if}^{\mathrm C}|^2+
+|\boldsymbol\mu_{if}^{\mathrm{HT}}|^2+
+2\operatorname{Re}\!\left[(\boldsymbol\mu_{if}^{\mathrm C})^*\cdot
+\boldsymbol\mu_{if}^{\mathrm{HT}}\right].
+$$
+
+The interference term can be negative. `fractions_of_total_signal` divides these signed photon-weighted contributions by the full coherent signal. The Condon/HT decomposition depends on the expansion origin, which is recorded alongside it.
+
+For line weights $w_{if}=p_i f_{if}$ in absorption or $w_{if}=p_i A_{if}$ in emission, the centroid and standard deviation use
+
+$$
+\bar E=\frac{\sum w_{if}E_{if}}{\sum w_{if}},\qquad
+\sigma_E=\sqrt{\frac{\sum w_{if}(E_{if}-\bar E)^2}{\sum w_{if}}}.
+$$
+
+These describe retained sticks. The `gaussian_profiles` entries additionally record the sampled maximum and a local quadratic estimate of its position. A Gaussian profile maximum, strongest stick, centroid and 0–0 origin are different observables. Compare like quantities when reporting a Stokes shift or an electronic-structure error.
